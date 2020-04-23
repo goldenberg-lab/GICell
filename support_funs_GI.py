@@ -13,32 +13,51 @@ import seaborn as sns
 def sigmoid(z):
     return 1 / (1 + np.exp(-z))
 
+def intax3(arr):
+    return np.apply_over_axes(np.sum,arr,2)
 
 # Function to plot numpy array
-def array_plot(arr, path, fn='lbl_test.png', cmap='viridis'):  #cmap='gray'
+# fn='both2.png'; path=dir_figures; cmap='viridis'
+def array_plot(arr, path, pts=None, fn='lbl_test.png', cmap='viridis'):  #cmap='gray'
     plt.close()
-    fig, ax = plt.subplots(1,1,figsize=(6,6))
+    nimg = arr.shape[-1]
+    dimg = len(arr.shape)
+    fig, axes = plt.subplots(nimg,1,figsize=(6,6*nimg))
     vm = 1
     if arr.dtype == np.integer:
         vm = 255
-    ax.imshow(arr,cmap=cmap,vmin=0,vmax=vm)
+    for ii, ax in enumerate(axes.flatten()):
+        if dimg == 3:
+            arr_ii = arr[:, :, ii]
+        elif dimg == 4:
+            arr_ii = arr[:, :, :, ii]
+        ax.imshow(arr_ii, cmap=cmap, vmin=0, vmax=vm)
+    if pts is not None:
+        stopifnot(pts.shape[0:2] == arr.shape[0:2] and pts.shape[2] == arr.shape[3])
+        for ii, ax in enumerate(axes.flatten()):
+            pts_ii = pts[:,:,ii]
+            idx_ii = np.where(pts_ii >= 0)
+            ax.scatter(y=idx_ii[0], x=idx_ii[1], s=pts_ii[idx_ii]*0.1, c='orange')
     fig.savefig(os.path.join(path,fn))
 
-
-# Function to convert numpy array to torch array
-def array2torch(xx, device):
-    stopifnot(len(xx.shape) == 3)
-    tens = torch.zeros(tuple(np.append(1, np.flip(xx.shape))), device=device)
-    tens[0, :, :, :] = torch.tensor(xx.T.astype(np.float32) / 255)
-    return tens
-
+# # Function to convert numpy array to torch array
+# def array2torch(xx, device):
+#     if len(xx.shape) == 2:  # for label
+#         tens = torch.tensor(xx.transpose(2, 0, 1).astype(np.float32))
+#     elif len(xx.shape) == 3:  # for image
+#         tens = xx.transpose(3, 2, 0, 1).astype(np.float32)
+#         tens = torch.tensor( tens / 255 )
+#     return tens
 
 # Function to convert torch array back to numpy array (vmax=255)
 def torch2array(xx, vm=255):
-    stopifnot(xx.shape[0] == 1)
-    arr = np.zeros(tuple(np.flip(xx.shape[1:])))
-    arr = xx.cpu().detach().numpy().T[:, :, :, 0]
-    arr = (arr * vm).astype(int)
+    if len(xx.shape) == 4:  # from image
+        arr = xx.cpu().detach().numpy().transpose(2, 3, 1, 0)
+        arr = (arr * vm).astype(int)
+    elif len(xx.shape) == 3:  # for labels
+        arr = xx.cpu().detach().numpy().transpose(1, 2, 0)
+    else:
+        stopifnot(False)
     return arr
 
 def stopifnot(cond):
