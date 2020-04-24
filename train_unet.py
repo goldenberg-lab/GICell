@@ -2,16 +2,22 @@
 import os, pickle
 import numpy as np
 import pandas as pd
-from support_funs_GI import stopifnot, torch2array, array_plot, sigmoid
+from support_funs_GI import stopifnot, torch2array, sigmoid, ljoin, comp_plt
 from time import time
 from support_funs_GI import intax3
 import torch
 from unet_model import UNet
+from sklearn import metrics
 
 from helper_torch import CellCounterDataset, img2tensor, randomRotate, randomFlip
 from torchvision import transforms
 from torch.utils import data
 
+import matplotlib
+if not matplotlib.get_backend().lower() == 'agg':
+    matplotlib.use('Agg')
+from matplotlib import pyplot as plt
+import seaborn as sns
 
 ######################################
 ## --- (1) PREP DATA AND MODELS --- ##
@@ -19,6 +25,13 @@ from torch.utils import data
 dir_base = os.getcwd()
 dir_output = os.path.join(dir_base, '..', 'output')
 dir_figures = os.path.join(dir_output, 'figures')
+lst_dir = [dir_output, dir_figures]
+[stopifnot(z) for z in lst_dir]
+dir_checkpoint = os.path.join(dir_output, 'checkpoint')
+if not os.path.exists(dir_checkpoint):
+    print('making checkpoint folder')
+    os.mkdir(dir_checkpoint)
+
 # Load data
 di_img_point = pickle.load(open(os.path.join(dir_output, 'di_img_point.pickle'), 'rb'))
 ids_tissue = list(di_img_point.keys())
@@ -43,6 +56,7 @@ b0 = np.log(mu_pixels / (1 - mu_pixels))
 torch.manual_seed(1234)
 mdl = UNet(n_channels=3, n_classes=1, bilinear=False)
 mdl.to(device)
+# mdl.load_state_dict(torch.load(os.path.join(dir_ee,'mdl_1000.pt')))
 with torch.no_grad():
     mdl.outc.conv.bias.fill_(b0)
 # Check CUDA status for model
@@ -54,13 +68,13 @@ criterion = torch.nn.BCEWithLogitsLoss()
 # Optimizer
 optimizer = torch.optim.Adagrad(params=mdl.parameters(), lr=1e-4)
 
-
 # tnow = time()
 # # Loop through images and make sure they average number of cells equal
 # mat = np.zeros([len(ids_tissue), 2])
 # for ii, idt in enumerate(ids_tissue):
 #     print('ID-tissue %s (%i of %i)' % (idt, ii + 1, len(ids_tissue)))
-#     tens = array2torch(di_img_point[idt]['img'], device)
+#     tens = img2tensor(device)([di_img_point[idt]['img'],di_img_point[idt]['lbls']])[0]
+#     tens = tens.reshape([1,3,501,501])
 #     arr = torch2array(tens)
 #     with torch.no_grad():
 #         logits = mdl(tens)
@@ -69,85 +83,141 @@ optimizer = torch.optim.Adagrad(params=mdl.parameters(), lr=1e-4)
 #         mat[ii] = [nc, ncl]
 # # print(mat.mean(axis=0)); print(mu_pixels*501**2); print(mu_cells); print(b0)
 # print('Script took %i seconds' % (time() - tnow))
+# torch.cuda.empty_cache()
 
 ################################
 ## --- (2) BEGIN TRAINING --- ##
 
 # Select instances for training/validation
-idt_val = list(np.random.choice(ids_tissue,3))
-idt_train = list(np.setdiff1d(ids_tissue, idt_val))
+q1 = pd.Series(ids_tissue)
+idt_train = q1[~q1.str.contains('MM6IXZVW')].to_list()
+idt_val = q1[q1.str.contains('MM6IXZVW')].to_list()
 print('%i training samples\n%i validation samples' %
       (len(idt_train), len(idt_val)))
 
 # Create datasetloader class
 train_params = {'batch_size': 2,'shuffle': True}
 val_params = {'batch_size': len(idt_val),'shuffle': False}
+eval_params = {'batch_size': 1,'shuffle': False}
 
 train_transform = transforms.Compose([randomRotate(tol=1e-4), randomFlip(), img2tensor(device)])
 train_data = CellCounterDataset(di=di_img_point, ids=idt_train, transform=train_transform)
 train_gen = data.DataLoader(dataset=train_data,**train_params)
-# ids_batch, lbls_batch, imgs_batch = next(iter(train_gen))
 val_transform = transforms.Compose([img2tensor(device)])
 val_data = CellCounterDataset(di=di_img_point, ids=idt_val, transform=val_transform)
 val_gen = data.DataLoader(dataset=val_data,**val_params)
+eval_data = CellCounterDataset(di=di_img_point, ids=idt_train + idt_val, transform=val_transform)
+eval_gen = data.DataLoader(dataset=eval_data, **eval_params)
 
 tnow = time()
-nepochs = 500
-mat_loss = np.zeros([nepochs, 2])
+nepochs = 5000
+mat_loss = np.zeros([nepochs, 3])
+ee, ii = 0, 1
 for ee in range(nepochs):
     print('--------- EPOCH %i of %i ----------' % (ee+1, nepochs))
     ii = 0
     np.random.seed(ee)
-    holder_loss = []
+    torch.manual_seed(ee)
+    lst_ce, lst_pred, lst_act = [], [], []
     for ids_batch, lbls_batch, imgs_batch in train_gen:
         ii += 1
         ids_batch = list(ids_batch)
+        nbatch = len(ids_batch)
         print('-- batch %i of %i: %s --' % (ii, len(train_gen), ', '.join(ids_batch)))
         # --- Forward pass --- #
         optimizer.zero_grad()
         logits = mdl(imgs_batch)
-        print(logits.mean())
         assert logits.shape == lbls_batch.shape
         loss = criterion(input=logits,target=lbls_batch)
         # --- Backward pass --- #
         loss.backward()
         # --- Gradient step --- #
         optimizer.step()
-        # Empty cache
-        torch.cuda.empty_cache()
-        # Get performance
+        torch.cuda.empty_cache()  # Empty cache
+        # --- Performance --- #
         ii_loss = loss.cpu().detach().numpy()+0
-        # PREDICTED VERSUS ACTUAL GOES HERE
-        holder_loss.append(ii_loss)
-        print('Loss: %0.4f' % (ii_loss))
-    ee_loss = np.mean(holder_loss)
+        ii_phat = sigmoid(logits.cpu().detach().numpy())
+        ii_pred, ii_act = np.zeros(nbatch), np.zeros(nbatch)
+        for kk in range(nbatch):
+            ii_pred[kk] = ii_phat[kk,0,:,:].sum() / pfac
+            ii_act[kk] = di_img_point[ids_batch[kk]]['pts'].shape[0]
+        lst_ce.append(ii_loss)
+        lst_pred.append(list(ii_pred))
+        lst_act.append(list(ii_act))
+        print('Cross-entropy loss: %0.4f\nPredicted: %s, actual: %s' %
+              (ii_loss, ', '.join(ii_pred.astype(int).astype(str)),
+               ', '.join(ii_act.astype(int).astype(str))))
+    rho_train = metrics.r2_score(ljoin(lst_act), ljoin(lst_pred))
+    ce_train = np.mean(lst_ce)
+
     # Evaluate model on validation data
     with torch.no_grad():
-        ids_batch, lbls_batch, imgs_batch = next(iter(val_gen))
-        logits = mdl.eval()(imgs_batch)
-        vv_loss = criterion(input=logits,target=lbls_batch).cpu().detach().numpy()+0
-        # Empty cache
-        torch.cuda.empty_cache()
-    print('Validation loss: %0.4f' % vv_loss)
-    mat_loss[ee] = [ee_loss, vv_loss]
+        for ids_batch, lbls_batch, imgs_batch in val_gen:
+            logits = mdl.eval()(imgs_batch)
+            ii_phat = sigmoid(logits.cpu().detach().numpy())
+            ce_val = criterion(input=logits,target=lbls_batch).cpu().detach().numpy()+0
+            nbatch = len(ids_batch)
+            ii_pred, ii_act = np.zeros(nbatch), np.zeros(nbatch)
+            for kk in range(nbatch):
+                ii_pred[kk] = ii_phat[kk, 0, :, :].sum() / pfac
+                ii_act[kk] = di_img_point[ids_batch[kk]]['pts'].shape[0]
+            print(pd.DataFrame({'id':ids_batch, 'pred':ii_pred.astype(int),'act':ii_act.astype(int)}))
+    torch.cuda.empty_cache()  # Empty cache
+    print('Cross-entropy - training: %0.4f, validation: %0.4f, cell-count corr: %0.3f' %
+          (ce_train, ce_val, rho_train))
+    mat_loss[ee] = [ce_train, ce_val, rho_train]
     print('Epoch took %i seconds' % int(time() - tnow))
     tnow = time()
-    # Save plots
-    if ee+1 == nepochs:
-        # Training
-        ids_batch, lbls_batch, imgs_batch = next(iter(train_gen))
-        logits = mdl.eval()(imgs_batch)
-        array_plot(torch2array(imgs_batch), pts=sigmoid(torch2array(logits[:, 0, :, :])),
-                   path=dir_figures, fn='train_samples_' + str(ee + 1) + '.png')
-        del ids_batch, lbls_batch, imgs_batch, logits
-        # Validation
-        ids_batch, lbls_batch, imgs_batch = next(iter(val_gen))
-        logits = mdl.eval()(imgs_batch)
-        array_plot(torch2array(imgs_batch), pts=sigmoid(torch2array(logits[:, 0, :, :])),
-                   path=dir_figures, fn='val_samples_' + str(ee+1) + '.png')
-        del ids_batch, lbls_batch, imgs_batch, logits
+    # Save plots and network every 250 epochs
+    if (ee+1) % 250 == 0:
+        print('------------ SAVING MODEL AT CHECKPOINT --------------')
+        dir_ee = os.path.join(dir_checkpoint,'epoch_'+str(ee+1))
+        if not os.path.exists(dir_ee):
+            os.mkdir(dir_ee)
+        with torch.no_grad():
+            holder = []
+            for ids_batch, lbls_batch, imgs_batch in eval_gen:
+                id = ids_batch[0]
+                print('Making image for: %s' % id)
+                logits = mdl.eval()(imgs_batch).cpu().detach().numpy()
+                logits = sigmoid(logits[0,0,:,:])
+                img = torch2array(imgs_batch)[:, :, :, 0]
+                gaussian = intax3(di_img_point[id]['lbls'])[:,:,0]
+                comp_plt(arr=img,pts=logits,gt=gaussian,path=dir_ee,fn=id+'.png',
+                         thresh=sigmoid(np.floor(b0)))
+                holder.append([id, gaussian.sum() / pfac, logits.sum() / pfac])
+        df_ee = pd.DataFrame(holder,columns=['id','act','pred'])
+        df_ee['tt'] = np.where(df_ee.id.isin(idt_val), 'Validation', 'Training')
+        df_ee.to_csv(os.path.join(dir_ee,'df_'+str(ee+1)+'.csv'),index=False)
+        r2_ee = metrics.r2_score(df_ee.act, df_ee.pred)
+        # --- make figure --- #
+        plt.close()
+        g = sns.FacetGrid(df_ee,hue='tt',height=5,aspect=1.2)
+        g.map(plt.scatter,'pred','act')
+        g.set_xlabels('Predicted')
+        g.set_ylabels('Actual')
+        g.fig.suptitle('Estimed number of cells at epoch %i\nR-squared: %0.3f' % (ee + 1, r2_ee))
+        g.fig.subplots_adjust(top=0.85)
+        g.add_legend()
+        g._legend.set_title('')
+        for ax in g.axes.flatten():
+            xmx = int(max(max(ax.get_xlim()),max(ax.get_ylim())))+1
+            xmi = int(min(min(ax.get_xlim()),min(ax.get_ylim())))-1
+            ax.set_ylim((xmi, xmx))
+            ax.set_xlim((xmi, xmx))
+            ax.plot([xmi, xmx], [xmi, xmx], '--',c='black')
+        g.fig.savefig(os.path.join(dir_ee, 'cell_est.png'))
+        # ---- #
+        torch.cuda.empty_cache()  # Empty cache
+        # Save network
+        torch.save(mdl.state_dict(), os.path.join(dir_ee,'mdl_'+str(ee+1)+'.pt'))
 
-print(mat_loss)
+# SAVE LOSS AND NETWORK PLEASE!!
+df_loss = pd.DataFrame(mat_loss,columns=['train','val','rho'])
+df_loss.insert(0,'epoch',np.arange(nepochs)+1)
+df_loss = df_loss[df_loss.train != 0].reset_index(None,True)
+df_loss.to_csv(os.path.join(dir_output,'mdl_performance.csv'),index=False)
+
 
 
 

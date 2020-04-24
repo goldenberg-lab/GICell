@@ -3,18 +3,57 @@ import pandas as pd
 import numpy as np
 from zipfile import ZipFile
 from scipy.ndimage import gaussian_filter
-import torch
 
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
-import seaborn as sns
 
 def sigmoid(z):
     return 1 / (1 + np.exp(-z))
 
 def intax3(arr):
     return np.apply_over_axes(np.sum,arr,2)
+
+def ljoin(x):
+    return list(itertools.chain.from_iterable(x))
+
+def stopifnot(cond):
+    if not cond:
+        sys.exit('error!')
+
+# pts=logits.copy();arr=img.copy();gt=gaussian.copy()
+# path=dir_ee;fn=id+'.png';thresh=sigmoid(b0)
+def comp_plt(arr, pts, gt, path, thresh=1e-4, fn='some.png'):
+    plt.close()
+    id = fn.replace('.png','')
+    stopifnot(len(arr.shape)==3)
+    fig, axes = plt.subplots(1,2,figsize=(10,5))
+    pts = np.where(pts < thresh, 0, pts)
+    vm = 1
+    if arr.dtype == np.integer:
+        vm = 255
+    for ii, ax in enumerate(axes.flatten()):
+        if ii == 0:
+            ax.imshow(arr, cmap='viridis', vmin=0, vmax=vm)
+            idx_ii = np.where(gt >= 0)
+            ax.scatter(y=idx_ii[0], x=idx_ii[1], s=gt[idx_ii], c='yellow')
+            ax.set_title('Ground Truth', fontsize=14)
+        elif ii == 1:
+            ax.imshow(arr, cmap='viridis', vmin=0, vmax=vm)
+            idx_ii = np.where(pts >= 0)
+            ax.scatter(y=idx_ii[0], x=idx_ii[1], s=pts[idx_ii], c='yellow')
+            ax.set_title('Predicted',fontsize=14)
+        # elif ii == 2:
+        #     idx_ii = np.where(pts >= 0)
+        #     ax.scatter(y=idx_ii[0], x=idx_ii[1], s=pts[idx_ii] * 0.1, c='orange')
+        # else:
+        #     idx_ii = np.where(gt >= 0)
+        #     ax.scatter(y=idx_ii[0], x=idx_ii[1], s=gt[idx_ii] * 0.1, c='orange')
+    # Set title
+    act, pred = int(gt.sum() / 9), int(pts.sum() / 9)
+    t = 'ID: %s, Predicted: %i, Actual: %i' % (id, pred, act)
+    fig.suptitle(t=t, fontsize=14,weight='bold')
+    fig.savefig(os.path.join(path, fn))
 
 # Function to plot numpy array
 # fn='both2.png'; path=dir_figures; cmap='viridis'
@@ -59,10 +98,6 @@ def torch2array(xx, vm=255):
     else:
         stopifnot(False)
     return arr
-
-def stopifnot(cond):
-    if not cond:
-        sys.exit('error!')
 
 # Function to create labels for each image
 # idx=idx_xy.copy(); shape=img_vals.shape[0:2]; fill=1; s2=2
