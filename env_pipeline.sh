@@ -20,6 +20,7 @@ if [ $n_conda == 1 ]; then
   else
     echo $n_env" environment needs to be installed"
     conda create --name $n_env python=3.7
+    conda activate $n_env
   fi
 else
   echo "Conda does not exist, loading python module"
@@ -47,4 +48,15 @@ for ii in `seq $n_line $n_end`; do
 	holder=$holder" "$pckg
 done
 echo "packages: "$holder
+
+if [ $n_conda == 1 ]; then
+  echo "Installing for conda environment"
+  pip install $holder
+else
+  printf "\n------------ Installing for HPF ------------\n"
+  pip install $holder --user
+fi
+
+echo "end of script"
+return
 
