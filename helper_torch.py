@@ -7,8 +7,9 @@ from scipy.ndimage import rotate
 
 
 class CellCounterDataset(data.Dataset):
-    def __init__(self,di,ids=None,transform=None):
+    def __init__(self,di,ids=None,transform=None,multiclass=False):
         self.di = di
+        self.multiclass = multiclass
         if ids is None:
             self.ids = list(di.keys())
         else:
@@ -21,8 +22,10 @@ class CellCounterDataset(data.Dataset):
 
     def __getitem__(self,idx):
         id = self.ids[idx]
-        # Collapse label count across third dimension (WILL NEED TO CHANGE FOR MULTICLASS FUTURE)
-        lbls = intax3(self.di[id]['lbls']).astype(np.float32)
+        if self.multiclass:
+            lbls = self.di[id]['lbls'].astype(np.float32)
+        else:  # Intergrate out the third access
+            lbls = intax3(self.di[id]['lbls']).astype(np.float32)
         imgs = self.di[id]['img'].astype(np.float32) / 255
         if self.transform:
             imgs, lbls = self.transform([imgs, lbls])
@@ -39,9 +42,9 @@ class img2tensor(object):
             imgs = imgs.astype(np.float32)
         if not lbls.dtype == np.float32:
             lbls = lbls.astype(np.float32)
-        # Image in h,w,c convert to -> c,h,w
+        # Image in height, width, channels convert to -> c, h, w
         imgs = torch.tensor(imgs.transpose(2, 0, 1)).to(self.device)
-        # lbls are in h,w,k  format -> k, h, w
+        # lbls are in height, width, cells  format -> c, h, w
         lbls = torch.tensor(lbls.transpose(2, 0, 1)).to(self.device)
         return imgs, lbls
 

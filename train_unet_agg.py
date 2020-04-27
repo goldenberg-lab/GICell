@@ -1,4 +1,3 @@
-
 import os, pickle
 import numpy as np
 import pandas as pd
@@ -54,7 +53,7 @@ b0 = np.log(mu_pixels / (1 - mu_pixels))
 
 # Load the model
 torch.manual_seed(1234)
-mdl = UNet(n_channels=3, n_classes=1, bilinear=False)
+mdl = UNet(n_channels=3, n_classes=1)
 mdl.to(device)
 # mdl.load_state_dict(torch.load(os.path.join(dir_ee,'mdl_1000.pt')))
 with torch.no_grad():
@@ -100,13 +99,15 @@ train_params = {'batch_size': 2,'shuffle': True}
 val_params = {'batch_size': len(idt_val),'shuffle': False}
 eval_params = {'batch_size': 1,'shuffle': False}
 
+multiclass=False
+
 train_transform = transforms.Compose([randomRotate(tol=1e-4), randomFlip(), img2tensor(device)])
-train_data = CellCounterDataset(di=di_img_point, ids=idt_train, transform=train_transform)
+train_data = CellCounterDataset(di=di_img_point, ids=idt_train, transform=train_transform, multiclass=multiclass)
 train_gen = data.DataLoader(dataset=train_data,**train_params)
 val_transform = transforms.Compose([img2tensor(device)])
-val_data = CellCounterDataset(di=di_img_point, ids=idt_val, transform=val_transform)
+val_data = CellCounterDataset(di=di_img_point, ids=idt_val, transform=val_transform, multiclass=multiclass)
 val_gen = data.DataLoader(dataset=val_data,**val_params)
-eval_data = CellCounterDataset(di=di_img_point, ids=idt_train + idt_val, transform=val_transform)
+eval_data = CellCounterDataset(di=di_img_point, ids=idt_train + idt_val, transform=val_transform, multiclass=multiclass)
 eval_gen = data.DataLoader(dataset=eval_data, **eval_params)
 
 tnow = time()
@@ -217,12 +218,3 @@ df_loss = pd.DataFrame(mat_loss,columns=['train','val','rho'])
 df_loss.insert(0,'epoch',np.arange(nepochs)+1)
 df_loss = df_loss[df_loss.train != 0].reset_index(None,True)
 df_loss.to_csv(os.path.join(dir_output,'mdl_performance.csv'),index=False)
-
-
-
-
-
-
-
-
-
