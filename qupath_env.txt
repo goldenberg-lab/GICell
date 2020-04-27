@@ -68,4 +68,5 @@ dependencies:
     - scikit-image==0.16.2
     - scipy==1.4.1
     - scikit-learn==0.22.2.post1
+    - xlrd==1.2.0
 prefix: /home/edrysdale/miniconda3/envs/QuPath
