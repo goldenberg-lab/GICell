@@ -8,6 +8,7 @@
 # print('Number of params: %i' % (num_param))
 # import sys; sys.exit('leaving')
 num_param=8
+epoch_start = 250
 
 import os, pickle
 import numpy as np
@@ -69,21 +70,26 @@ else:
 device = torch.device('cuda' if use_cuda else 'cpu')
 
 # Load the model
+pfac = 9  # Number of cells have been multiplied by 9 (basically)
 multiclass = True
 num_classes = 6
 torch.manual_seed(1234)
 mdl = UNet(n_channels=3, n_classes=num_classes, bl=num_param)
 mdl.to(device)
-# mdl.load_state_dict(torch.load(os.path.join(dir_ee,'mdl_1000.pt')))
-
-# Will output bias with matching log-odds
-pfac = 9  # Number of cells have been multiplied by 9 (basically)
-mat = np.vstack([sumax3(di_img_point[z]['lbls']) for z in di_img_point]).astype(int)
-mu_pixels = mat.mean(0) / (501 ** 2)
-b0 = np.log(mu_pixels / (1 - mu_pixels)).astype(np.float32)
-print('Setting bias to: %s,' % dict(zip(valid_cells, np.round(b0, 2))))
-with torch.no_grad():
-    [mdl.outc.conv.bias[k].fill_(b0[k]) for k in range(len(b0))]
+if epoch_start > 0:
+    fn_cp = pd.Series(os.listdir(dir_checkpoint))
+    fn_cp = fn_cp[fn_cp.str.contains('epoch_'+str(epoch_start))]
+    if len(fn_cp) == 1:
+        path = os.path.join(dir_checkpoint, 'epoch_' + str(epoch_start), 'mdl_'+str(epoch_start)+'.pt')
+    mdl.load_state_dict(torch.load(path))
+else:
+    # Will output bias with matching log-odds
+    mat = np.vstack([sumax3(di_img_point[z]['lbls']) for z in di_img_point]).astype(int)
+    mu_pixels = mat.mean(0) / (501 ** 2)
+    b0 = np.log(mu_pixels / (1 - mu_pixels)).astype(np.float32)
+    print('Setting bias to: %s,' % dict(zip(valid_cells, np.round(b0, 2))))
+    with torch.no_grad():
+        [mdl.outc.conv.bias[k].fill_(b0[k]) for k in range(len(b0))]
 
 # Check CUDA status for model
 print('Are network parameters cuda?: %s' %
@@ -154,10 +160,12 @@ eval_gen = data.DataLoader(dataset=eval_data, **eval_params)
 
 tnow = time()
 nepochs = 5000
-df_loss = pd.DataFrame({'ce_train': np.zeros(nepochs), 'ce_val': np.zeros(nepochs)})
+df_loss = pd.DataFrame({'ce_train': np.zeros(nepochs-epoch_start),
+                        'ce_val': np.zeros(nepochs-epoch_start)})
 df_rsq = []
-ee, ii = 0, 1
-for ee in range(nepochs):
+ee, ii = epoch_start, 1
+epoch_iter = np.arange(epoch_start, nepochs)
+for ee in epoch_iter:
     print('--------- EPOCH %i of %i ----------' % (ee + 1, nepochs))
     ii = 0
     np.random.seed(ee)
@@ -231,8 +239,8 @@ for ee in range(nepochs):
                 logits = sigmoid(logits[0, :, :, :].transpose(1, 2, 0))
                 img = torch2array(imgs_batch)[:, :, :, 0]
                 gaussian = di_img_point[id]['lbls']
-                comp_plt(arr=img, pts=logits, gt=gaussian, path=dir_ee, fn=id + '.png',
-                         thresh=sigmoid(np.floor(b0)), lbls=valid_cells)
+                # comp_plt(arr=img, pts=logits, gt=gaussian, path=dir_ee, fn=id + '.png',
+                #          thresh=sigmoid(np.floor(b0)), lbls=valid_cells)
                 tmp = pd.DataFrame({'id':id, 'cell':valid_cells,
                                     'act':sumax3(gaussian) / pfac,'pred':sumax3(logits) / pfac})
                 holder.append(tmp)

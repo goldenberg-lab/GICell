@@ -39,7 +39,7 @@ def stopifnot(cond):
 
 
 colorz = np.array([sns.color_palette(None)[k] for k in [0, 1, 2, 5, 6, 7]])
-# pts=logit.copy();arr=img.copy();gt=gaussian.copy()
+# pts=gaussian_filter(gaussian,1).copy();arr=img.copy();gt=gaussian.copy()
 # path=dir_ee;fn=id+'.png';thresh=sigmoid(b0); lbls=valid_cells
 """
 arr: the 3-channel image
@@ -47,8 +47,6 @@ pts: the model predicted points (with len(lbls) many channels)
 gt: ground truth, should be same size as pts
 lbls: name for each of the channels of pts/gt
 """
-
-
 def comp_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
     plt.close()
     # id = fn.replace('.png','')
@@ -95,6 +93,13 @@ def comp_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
     fig.suptitle(t=t, fontsize=14, weight='bold')
     fig.subplots_adjust(right=0.8)
     fig.savefig(os.path.join(path, fn))
+# for jj in range(nlabs):
+# jj = 0
+# gt_jj = gt[:,:,jj].copy()
+# alpha_jj = np.where(gt_jj == 0, 0, 1)
+# col_jj = np.tile(matplotlib.colors.to_rgb('yellow'),gt_jj.shape).reshape(arr.shape)
+# col_jj[np.where(alpha_jj == 0)][:,2] = 1
+# ax.imshow(col_jj, cmap='viridis', vmin=0, vmax=1, alpha=alpha_jj)
 
 
 # Function to plot numpy array
