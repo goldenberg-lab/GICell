@@ -63,8 +63,8 @@ dependencies:
     - pillow==7.1.1
     - pytz==2019.3
     - seaborn==0.10.0
-    - pytorch=1.5.0=py3.7_cpu_0
-    - torchvision=0.6.0=py37_cpu
-    - scikit-image=0.16.2=py37hb3f55d8_0
-    - scipy=1.4.1=py37h0b6359f_0
+    - pytorch==1.5.0=py3.7_cpu_0
+    - torchvision==0.6.0=py37_cpu
+    - scikit-image==0.16.2=py37hb3f55d8_0
+    - scipy=1.4.1==py37h0b6359f_0
 prefix: /home/edrysdale/miniconda3/envs/QuPath
