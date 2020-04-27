@@ -35,7 +35,7 @@ if not os.path.exists(dir_output):
     os.mkdir(dir_output)
 
 valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
-
+# ratio1: eosonphil / everything
 
 ##################################
 ## --- (1) LOAD IN THE DATA --- ##

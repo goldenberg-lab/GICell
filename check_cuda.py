@@ -9,7 +9,6 @@ else:
     print('CUDA IS NOT AVAILABLE, USING CPU')
 device = torch.device("cuda" if use_cuda else "cpu")
 
-
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()

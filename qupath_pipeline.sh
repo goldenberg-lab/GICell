@@ -4,5 +4,8 @@ echo "QuPath processing pipeline"
 
 conda activate QuPath
 
-python qupath_points.py
+# Generate the pickle dictionary of data
+python data_gen.py
 
+# Run the model
+python train_unet.py

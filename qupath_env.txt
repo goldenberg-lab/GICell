@@ -44,17 +44,13 @@ dependencies:
   - python=3.7.7=hcf32534_0_cpython
   - python-dateutil=2.8.1=py_0
   - python_abi=3.7=1_cp37m
-  - pytorch=1.5.0=py3.7_cpu_0
   - pywavelets=1.1.1=py37h03ebfcd_1
   - readline=8.0=h7b6447c_0
-  - scikit-image=0.16.2=py37hb3f55d8_0
-  - scipy=1.4.1=py37h0b6359f_0
   - setuptools=46.1.3=py37_0
   - six=1.14.0=py37_0
   - sqlite=3.31.1=h7b6447c_0
   - tk=8.6.8=hbc83047_0
   - toolz=0.10.0=py_0
-  - torchvision=0.6.0=py37_cpu
   - tornado=6.0.4=py37h8f50634_1
   - wheel=0.34.2=py37_0
   - xz=5.2.4=h14c3975_4
@@ -67,5 +63,8 @@ dependencies:
     - pillow==7.1.1
     - pytz==2019.3
     - seaborn==0.10.0
+    - pytorch=1.5.0=py3.7_cpu_0
+    - torchvision=0.6.0=py37_cpu
+    - scikit-image=0.16.2=py37hb3f55d8_0
+    - scipy=1.4.1=py37h0b6359f_0
 prefix: /home/edrysdale/miniconda3/envs/QuPath
-
