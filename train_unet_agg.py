@@ -1,7 +1,7 @@
 import os, pickle
 import numpy as np
 import pandas as pd
-from support_funs_GI import stopifnot, torch2array, sigmoid, ljoin, comp_plt
+from support_funs_GI import stopifnot, torch2array, sigmoid, ljoin, comp_plt, makeifnot
 from time import time
 from support_funs_GI import intax3
 import torch
@@ -27,9 +27,9 @@ dir_figures = os.path.join(dir_output, 'figures')
 lst_dir = [dir_output, dir_figures]
 [stopifnot(z) for z in lst_dir]
 dir_checkpoint = os.path.join(dir_output, 'checkpoint')
-if not os.path.exists(dir_checkpoint):
-    print('making checkpoint folder')
-    os.mkdir(dir_checkpoint)
+dir_aggregate = os.path.join(dir_checkpoint, 'aggregate')
+makeifnot(dir_checkpoint)
+makeifnot(dir_aggregate)
 
 # Load data
 di_img_point = pickle.load(open(os.path.join(dir_output, 'di_img_point.pickle'), 'rb'))
@@ -172,7 +172,7 @@ for ee in range(nepochs):
     # Save plots and network every 250 epochs
     if (ee+1) % 250 == 0:
         print('------------ SAVING MODEL AT CHECKPOINT --------------')
-        dir_ee = os.path.join(dir_checkpoint,'epoch_'+str(ee+1))
+        dir_ee = os.path.join(dir_aggregate,'epoch_'+str(ee+1))
         if not os.path.exists(dir_ee):
             os.mkdir(dir_ee)
         with torch.no_grad():

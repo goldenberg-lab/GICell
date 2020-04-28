@@ -11,6 +11,19 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 
 
+def makeifnot(path):
+    if not os.path.exists(path):
+        print('making folder')
+        os.mkdir(path)
+
+
+def str_subset(ss, pat):
+    if not isinstance(ss, pd.Series):
+        ss = pd.Series(ss)
+    ss = ss[ss.str.contains(pat)].reset_index(None, True)
+    return ss
+
+
 def sigmoid(z):
     return 1 / (1 + np.exp(-z))
 
@@ -28,6 +41,10 @@ def meanax3(arr):
     ss = [arr[:, :, k].mean() for k in range(arr.shape[2])]
     return np.array(ss)
 
+def quantax3(arr,q=0.5):
+    ss = [np.quantile(arr[:, :, k],q) for k in range(arr.shape[2])]
+    return np.array(ss)
+
 
 def ljoin(x):
     return list(itertools.chain.from_iterable(x))
@@ -38,9 +55,9 @@ def stopifnot(cond):
         sys.exit('error!')
 
 
-colorz = np.array([sns.color_palette(None)[k] for k in [0, 1, 2, 5, 6, 7]])
-# pts=gaussian_filter(gaussian,1).copy();arr=img.copy();gt=gaussian.copy()
-# path=dir_ee;fn=id+'.png';thresh=sigmoid(b0); lbls=valid_cells
+colorz3 = np.array([sns.color_palette(None)[k] for k in [0,1,2]])
+# arr=img.copy(); pts=phat.copy(); gt=gaussian.copy()
+# path=dir_ee;fn=idt+'.png';thresh=sigmoid(b0); lbls=agg_cells
 """
 arr: the 3-channel image
 pts: the model predicted points (with len(lbls) many channels)
@@ -49,50 +66,55 @@ lbls: name for each of the channels of pts/gt
 """
 def comp_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
     plt.close()
-    # id = fn.replace('.png','')
+    idt = fn.replace('.png', '')
     assert len(arr.shape) == 3
-    if lbls is None:
-        lbls = ['Aggergate']
     assert len(lbls) == pts.shape[2]
     assert pts.shape == gt.shape
     fig, axes = plt.subplots(2, 2, figsize=(8, 8))
-    pts = np.where(pts < thresh, 0, pts)
+    rgb_yellow = [255, 255, 0]
+    nlbl = len(lbls)
     vm = 1
+    # Create matrices to display
+    a1 = np.zeros(arr.shape, dtype=int) + 255
+    a3 = np.zeros(arr.shape) + 1
+    a2, a4 = a1.copy(), a3.copy()
+    for kk in range(nlbl):
+        thresh_kk = thresh[kk]
+        idx_kk_gt = gt[:, :, kk] > thresh_kk
+        idx_kk_pts = pts[:, :, kk] > thresh_kk
+        for jj in range(3):  # Color channels
+            a1[:, :, jj][idx_kk_gt] = rgb_yellow[jj]
+            a1[:, :, jj][~idx_kk_gt] = arr[:, :, jj][~idx_kk_gt]
+            a2[:, :, jj][idx_kk_pts] = rgb_yellow[jj]
+            a2[:, :, jj][~idx_kk_pts] = arr[:, :, jj][~idx_kk_pts]
+            a3[:, :, jj][idx_kk_gt] = colorz3[kk][jj]
+            a4[:, :, jj][idx_kk_pts] = colorz3[kk][jj]
+            a4[:, :, jj][~idx_kk_pts] = 1
     if arr.dtype == np.integer:
         vm = 255
     for ii, ax in enumerate(axes.flatten()):
         if ii == 0:
-            ax.imshow(arr, cmap='viridis', vmin=0, vmax=vm)
-            idx_ii = np.where(gt >= 0)
-            ax.scatter(y=idx_ii[0], x=idx_ii[1], s=gt[idx_ii], c='yellow')
-            ax.set_title('Ground Truth', fontsize=14)
+            ax.imshow(a1, cmap='viridis', vmin=0, vmax=vm)
+            ax.set_title('Ground truth', fontsize=14)
         elif ii == 1:
-            ax.imshow(arr, cmap='viridis', vmin=0, vmax=vm)
-            idx_ii = np.where(pts >= 0)
-            ax.scatter(y=idx_ii[0], x=idx_ii[1], s=gt[idx_ii], c='yellow')
+            ax.imshow(a2, cmap='viridis', vmin=0, vmax=vm)
             ax.set_title('Predicted', fontsize=14)
         elif ii == 2:
-            for jj, lbl in enumerate(lbls):
-                gt_jj = gt[:, :, jj].copy()
-                idx_jj = np.where(gt_jj >= 0)
-                ax.scatter(y=idx_jj[0], x=idx_jj[1], s=gt_jj[idx_jj], c=colorz[[jj]], label=lbl)
-            ax.set_title('Ground Truth', fontsize=14)
+            ax.imshow(a3, cmap='viridis')
+            ax.set_title('Actual', fontsize=14)
         elif ii == 3:
-            for jj, lbl in enumerate(lbls):
-                pts_jj = pts[:, :, jj].copy()
-                idx_jj = np.where(pts_jj >= thresh[jj])
-                ax.scatter(y=idx_jj[0], x=idx_jj[1], s=pts_jj[idx_jj], c=colorz[[jj]], label=lbl)
-            ax.legend(bbox_to_anchor=(1.05, 1.01))
-            for ss in ax.legend_.legendHandles:
-                ss._sizes = np.array([8])
+            ax.imshow(a4, cmap='viridis')
             ax.set_title('Predicted', fontsize=14)
-    # Set title
+    patches = [matplotlib.patches.Patch(color=colorz3[i], label=lbls[i]) for i in range(nlbl)]
+    fig.legend(handles=patches, bbox_to_anchor=(0.99, 0.3))
+    fig.subplots_adjust(right=0.85)
     act, pred = np.round(sumax3(gt) / 9, 0).astype(int), np.round(sumax3(pts) / 9, 0).astype(int)
     ap = ', '.join([str(a) + ':' + str(p) for a, p in zip(act, pred)])
-    t = 'ID: %s\nActual:Predicted: %s' % (id, ap)
+    t = 'ID: %s\nActual:Predicted: %s' % (idt, ap)
     fig.suptitle(t=t, fontsize=14, weight='bold')
-    fig.subplots_adjust(right=0.8)
     fig.savefig(os.path.join(path, fn))
+
+
 # for jj in range(nlabs):
 # jj = 0
 # gt_jj = gt[:,:,jj].copy()
