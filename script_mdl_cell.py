@@ -24,7 +24,6 @@ print('Cells: %s\nnum_epochs: %i\nbatch_size: %i\nlearning_rate: %0.3f, num_para
 # import sys
 # sys.exit('end of script')
 
-
 import os, pickle
 import numpy as np
 import pandas as pd
@@ -76,16 +75,18 @@ idx_cell = np.where(pd.Series(valid_cells).isin(cells))[0]
 for idt in ids_tissue:
     tmp = di_img_point[idt]['lbls'].copy()
     tmp2 = np.atleast_3d(tmp[:, :, idx_cell].sum(2))
-    di_img_point[idt]['lbls'] = tmp2
     tmp3 = di_img_point[idt]['pts'].copy()
-    assert tmp3[tmp3.cell.isin(cells)].shape[0] == int(np.round(tmp2.sum() / 9))
+    tmp3 = tmp3[tmp3.cell.isin(cells)]
+    di_img_point[idt]['lbls'] = tmp2
+    assert tmp3.shape[0] == int(np.round(tmp2.sum() / 9))
     del tmp, tmp2, tmp3
 
 # Get the mean number of cells
 pfac = 9  # Number of cells have been multiplied by 9 (basically)
 mu_pixels = np.mean([di_img_point[z]['lbls'].mean() for z in di_img_point])
-mu_cells = np.mean([di_img_point[z]['pts'].shape[0] for z in di_img_point])
-print('Error: %0.1f' % (mu_pixels*501**2/pfac - mu_cells))
+mu_cells = pd.concat([di_img_point[z]['pts'].cell.value_counts().reset_index().rename(columns={'index':'cell','cell':'n'}) for z in di_img_point])
+mu_cells = mu_cells[mu_cells.cell.isin(cells)].n.sum() / len(di_img_point)
+print('Error: %0.1f' % (mu_pixels * 501**2 / pfac - mu_cells))
 b0 = np.log(mu_pixels / (1 - mu_pixels))
 
 # Calculate distribution of cells types across images
