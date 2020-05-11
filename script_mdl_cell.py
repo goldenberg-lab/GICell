@@ -255,7 +255,8 @@ for ee in range(num_epochs):
                     thresher = sigmoid(np.floor(np.array([b0])))
                 else:
                     thresher = sigmoid(np.floor(b0))
-                comp_plt(arr=img,pts=phat,gt=gaussian,path=dir_ee,fn=id+'.png',lbls=cells, thresh=thresher)
+                comp_plt(arr=img,pts=phat,gt=gaussian,path=dir_ee,fn=id+'.png',
+                         lbls=[', '.join(cells)], thresh=thresher)
                 holder.append([id, gaussian.sum() / pfac, phat.sum() / pfac])
         df_ee = pd.DataFrame(holder,columns=['id','act','pred'])
         df_ee['tt'] = np.where(df_ee.id.isin(idt_val), 'Validation', 'Training')
