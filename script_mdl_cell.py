@@ -288,4 +288,5 @@ for ee in range(num_epochs):
 df_loss = pd.DataFrame(mat_loss,columns=['ce_train','ce_val','r2_train','r2_val'])
 df_loss.insert(0,'epoch',np.arange(num_epochs)+1)
 df_loss = df_loss[df_loss.ce_train != 0].reset_index(None,True)
-df_loss.to_csv(os.path.join(dir_output,'mdl_performance.csv'),index=False)
+df_loss.to_csv(os.path.join(dir_checkpoint,'mdl_performance.csv'),index=False)
+c
