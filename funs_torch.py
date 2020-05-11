@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from torch.utils import data
-from support_funs_GI import intax3, stopifnot
+from funs_support import intax3, stopifnot
 
 from scipy.ndimage import rotate
 

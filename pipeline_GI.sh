@@ -4,10 +4,11 @@
 source env_pipeline.sh
 
 echo "---- CHECKING CUDA STATUS ----"
-python check_cuda.py
+python script_check_cuda.py
 
 # Create data
-python data_gen.py
+python script_data_gen.py
 
-# Train model
-#python train_unet.py
+# Train model for each cell type
+
+python script_mdl_cell.py --cells

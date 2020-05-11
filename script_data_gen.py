@@ -1,12 +1,12 @@
 ###############################
 ## --- (0) PRELIMINARIES --- ##
 
-import os, pickle
+import os, pickle, re
 import numpy as np
 import pandas as pd
 from PIL import Image
 
-from support_funs_GI import stopifnot, zip_points_parse, label_blur
+from funs_support import stopifnot, zip_points_parse, label_blur
 
 dir_base = os.getcwd()
 dir_images = os.path.join(dir_base, '..', 'images')
@@ -36,16 +36,18 @@ stopifnot(qq.all())
 print('All points found in images, %i of %i images found in points' %
       (qq.sum(), len(raw_images)))
 
-tmp = pd.Series(fn_points).str.replace('.png-points.zip','').str.split('_',expand=True)
-ids = tmp.iloc[:,1]
-tissue = tmp.iloc[:,2]
-ids_tissue = ids + '_' + tissue
+ids_tissue = pd.Series(fn_points).str.replace('.png-points.zip|cleaned\\_','')
+# tmp = tmp.str.replace('\\_[0-9]{1,2}','').str.split('_',expand=True,n=1)
+# ids = tmp.iloc[:,0]
+# tissue = tmp.iloc[:,1]
+# ids_tissue = ids + '_' + tissue
 
 di_img_point = {z: {'img':[],'pts':[], 'lbls':[]} for z in ids_tissue}
 npoint = len(fn_points)
 for ii, fn in enumerate(fn_points):
     print('file %s (%i of %i)' % (fn, ii + 1, len(fn_points)))
-    idt = '_'.join(fn.split('_')[1:3])
+    idt = fn.replace('.png-points.zip','').replace('cleaned_','')
+    # idt = re.sub('\\_[0-9]{1,2}','', idt)
     path = os.path.join(dir_points, fn)
     df_ii = zip_points_parse(path, dir_base, valid_cells)
     path_img = os.path.join(dir_images, fn.split('-')[0])
@@ -58,6 +60,9 @@ for ii, fn in enumerate(fn_points):
                       shape=img_vals.shape[0:2], fill=fill, s2=s2)
     di_img_point[idt]['lbls'] = lbls.copy()
     stopifnot(np.round(np.sum(lbls) / fillfac**2).astype(int) == idx_xy.shape[0])
+
+print(len(di_img_point))
+assert all([di_img_point[z]['img'].shape[0]>0 for z in di_img_point])
 
 # Save for later
 pickle.dump(di_img_point, open(os.path.join(dir_output,'di_img_point.pickle'), "wb"))

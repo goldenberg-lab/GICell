@@ -203,11 +203,13 @@ def label_blur(idx, cells, vcells, shape, fill=1, s2=2):
 
 
 # Function to parse the zipped file
+# fn=path;dir=dir_base
 def zip_points_parse(fn, dir, valid_cells):
-    valid_files = ['Points ' + str(k + 1) + '.txt' for k in range(6)]
+    valid_files = ['Points ' + str(k + 1) + '.txt' for k in range(7)]
     with ZipFile(file=fn, mode='r') as zf:
         names = pd.Series(zf.namelist())
-        stopifnot(names.isin(valid_files).all())
+        if not names.isin(valid_files).all():
+            stopifnot(False)
         zf.extractall('tmp')
     # Loop through and parse files
     holder = []
