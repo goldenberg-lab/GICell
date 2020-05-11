@@ -14,8 +14,8 @@ batch_size = args.batch_size
 learning_rate = args.learning_rate
 num_params = args.num_params
 
-# for beta testing
-cells, num_epochs, batch_size, learning_rate, num_params = ['eosinophil'], 500, 2, 1e-3, 8
+# # for beta testing
+# cells, num_epochs, batch_size, learning_rate, num_params = ['eosinophil'], 500, 2, 1e-3, 8
 valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
 assert all([z in valid_cells for z in cells])
 
@@ -146,9 +146,9 @@ torch.cuda.empty_cache()
 ## --- (2) BEGIN TRAINING --- ##
 
 # Select instances for training/validation
-idt_val = ['49TJHRED_Rectum_30', '49TJHRED_Rectum_30_v2', '8HDFP8K2_Transverse_5',
-           'MARQQRM5_Transverse_10', 'QF0TMM7V_Sigmoid_95', 'QIGW0TSV_Transverse_0',
-           'BCN3OLB3_Descending_79']
+idt_val = ['49TJHRED_Rectum_30', 'RADS40DE_Rectum_13', '8HDFP8K2_Transverse_5',
+           '49TJHRED_Descending_46', 'BLROH2RX_Cecum_72', '8ZYY45X6_Sigmoid_19',
+           '6EAWUIY4_Rectum_56', 'BCN3OLB3_Descending_79']
 idt_train = df_cells.id[~df_cells.id.isin(idt_val)].to_list()
 print('%i training samples\n%i validation samples' %
       (len(idt_train), len(idt_val)))
