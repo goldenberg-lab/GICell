@@ -18,7 +18,7 @@ num_params = args.num_params
 epoch_check = args.epoch_check
 
 # # for beta testing
-# cells, num_epochs, batch_size, learning_rate, num_params = ['eosinophil'], 500, 2, 1e-3, 8
+# cells, num_epochs, batch_size, learning_rate, num_params, epoch_check = ['eosinophil'], 500, 2, 1e-3, 8, 1
 valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
 assert all([z in valid_cells for z in cells])
 
@@ -176,7 +176,7 @@ eval_data = CellCounterDataset(di=di_img_point, ids=idt_train + idt_val, transfo
 eval_gen = data.DataLoader(dataset=eval_data, **eval_params)
 
 tnow = time()
-mat_loss = np.zeros([num_epochs, 3])
+mat_loss = np.zeros([num_epochs, 4])
 ee, ii = 0, 1
 for ee in range(num_epochs):
     print('--------- EPOCH %i of %i ----------' % (ee+1, num_epochs))
@@ -209,8 +209,8 @@ for ee in range(num_epochs):
         lst_ce.append(ii_loss)
         lst_pred_act.append(ii_pred_act)
         print('Cross-entropy loss: %0.4f' % ii_loss)
-    mat_pred_act = np.vstack(lst_pred_act)
-    rho_train = metrics.r2_score(mat_pred_act[:,0], mat_pred_act[:,1])
+    mat_pred_act = pd.DataFrame(np.vstack(lst_pred_act),columns=['pred','act'])
+    rho_train = metrics.r2_score(mat_pred_act.act, mat_pred_act.pred)
     ce_train = np.mean(lst_ce)
 
     # Evaluate model on validation data
@@ -226,12 +226,14 @@ for ee in range(num_epochs):
                 ii_pred_act[kk, 1] = di_img_point[ids_batch[kk]]['lbls'].sum() / pfac
     val_pa = pd.DataFrame(ii_pred_act,columns=['pred','act'])
     val_pa.insert(0,'id',ids_batch)
+    rho_val = metrics.r2_score(val_pa.act, val_pa.pred)
     print(np.round(val_pa,1))
     torch.cuda.empty_cache()  # Empty cache
     # Print performance
-    print('Cross-entropy - training: %0.4f, validation: %0.4f, cell-count r-squared: %0.3f' %
-          (ce_train, ce_val, rho_train))
-    mat_loss[ee] = [ce_train, ce_val, rho_train]
+    print('Cross-entropy - training: %0.4f, validation: %0.4f'
+          'R-squared - training: %0.3f, validation: %0.3f' %
+          (ce_train, ce_val, rho_train, rho_val))
+    mat_loss[ee] = [ce_train, ce_val, rho_train, rho_val]
     print('Epoch took %i seconds' % int(time() - tnow))
     tnow = time()
     # Save plots and network every X epochs
@@ -282,7 +284,7 @@ for ee in range(num_epochs):
         torch.save(mdl.state_dict(), os.path.join(dir_ee,'mdl_'+str(ee+1)+'.pt'))
 
 # SAVE LOSS AND NETWORK PLEASE!!
-df_loss = pd.DataFrame(mat_loss,columns=['train','val','rho'])
+df_loss = pd.DataFrame(mat_loss,columns=['ce_train','ce_val','r2_train','r2_val'])
 df_loss.insert(0,'epoch',np.arange(num_epochs)+1)
 df_loss = df_loss[df_loss.train != 0].reset_index(None,True)
 df_loss.to_csv(os.path.join(dir_output,'mdl_performance.csv'),index=False)
