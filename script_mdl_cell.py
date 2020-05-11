@@ -7,12 +7,15 @@ parser.add_argument('-ne', '--num_epochs', type=int, default=1000, help='Number 
 parser.add_argument('-bs', '--batch_size', type=int, default=2, help='Batch size')
 parser.add_argument('-lr', '--learning_rate', type=float, default=1e-3, help='Learning rate')
 parser.add_argument('-np', '--num_params', type=int, default=8, help='Number of initial params for NNet')
+parser.add_argument('-ec', '--epoch_check', type=int, default=250, help='Iteration number to save checkpoint')
+
 args = parser.parse_args()
 cells = args.cells.split(',')
 num_epochs = args.num_epochs
 batch_size = args.batch_size
 learning_rate = args.learning_rate
 num_params = args.num_params
+epoch_check = args.epoch_check
 
 # # for beta testing
 # cells, num_epochs, batch_size, learning_rate, num_params = ['eosinophil'], 500, 2, 1e-3, 8
@@ -231,8 +234,8 @@ for ee in range(num_epochs):
     mat_loss[ee] = [ce_train, ce_val, rho_train]
     print('Epoch took %i seconds' % int(time() - tnow))
     tnow = time()
-    # Save plots and network every 250 epochs
-    if (ee+1) % 250 == 0:
+    # Save plots and network every X epochs
+    if (ee+1) % epoch_check == 0:
         print('------------ SAVING MODEL AT CHECKPOINT --------------')
         dir_ee = os.path.join(dir_cell,'epoch_'+str(ee+1))
         if not os.path.exists(dir_ee):
