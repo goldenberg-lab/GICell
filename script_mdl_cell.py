@@ -234,7 +234,8 @@ for ee in range(num_epochs):
           'R-squared - training: %0.3f, validation: %0.3f' %
           (ce_train, ce_val, rho_train, rho_val))
     mat_loss[ee] = [ce_train, ce_val, rho_train, rho_val]
-    print('Epoch took %i seconds' % int(time() - tnow))
+    tdiff = time() - tnow
+    print('Epoch took %i seconds, ETA: %i seconds' % (tdiff, (num_epochs-ee-1)*tdiff) )
     tnow = time()
     # Save plots and network every X epochs
     if (ee+1) % epoch_check == 0:
@@ -288,5 +289,4 @@ for ee in range(num_epochs):
 df_loss = pd.DataFrame(mat_loss,columns=['ce_train','ce_val','r2_train','r2_val'])
 df_loss.insert(0,'epoch',np.arange(num_epochs)+1)
 df_loss = df_loss[df_loss.ce_train != 0].reset_index(None,True)
-df_loss.to_csv(os.path.join(dir_checkpoint,'mdl_performance.csv'),index=False)
-c
+df_loss.to_csv(os.path.join(dir_cell,'mdl_performance.csv'),index=False)

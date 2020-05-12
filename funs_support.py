@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from zipfile import ZipFile
 from scipy.ndimage import gaussian_filter
+from sklearn.metrics import r2_score
 
 import matplotlib
 
@@ -53,6 +54,18 @@ def ljoin(x):
 def stopifnot(cond):
     if not cond:
         sys.exit('error!')
+
+def jackknife_r2(act, pred):
+    assert len(act) == len(pred)
+    n = len(act)
+    vec = np.zeros(n)
+    r2 = r2_score( act , pred )
+    for ii in range(n):
+        vec[ii] = r2_score(np.delete(act, ii), np.delete(pred, ii))
+    mi, mx = min(vec), max(vec)
+    bias = r2 - np.mean(vec)
+    mi, mx = mi + bias, mx + bias
+    return mi, mx
 
 
 colorz3 = np.array([sns.color_palette(None)[k] for k in [0,1,2]])
@@ -112,6 +125,50 @@ def comp_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
     ap = ', '.join([str(a) + ':' + str(p) for a, p in zip(act, pred)])
     t = 'ID: %s\nActual:Predicted: %s' % (idt, ap)
     fig.suptitle(t=t, fontsize=14, weight='bold')
+    fig.savefig(os.path.join(path, fn))
+
+# arr=img.copy(); pts=phat.copy(); gt=gt.copy()
+# path=dir_inference;fn=idt+'.png';thresh=[thresh_eosin, thresh_inflam]; lbls=['eosin','inflam']
+def val_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
+    idt = fn.replace('.png', '')
+    assert len(arr.shape) == 3
+    assert len(lbls) == pts.shape[2]
+    assert pts.shape == gt.shape
+    nlbl = len(lbls)
+    rgb_yellow = [255, 255, 0]
+    vm = 1
+
+    plt.close('all')
+    fig, axes = plt.subplots(nlbl, 3, figsize=(12, 4*nlbl))
+    for ii in range(nlbl):
+        thresh_ii = thresh[ii]
+        gt_ii, pts_ii = gt[:, :, ii], pts[:, :, ii]
+        idx_ii_gt = gt_ii > thresh_ii
+        idx_ii_pts = pts_ii > thresh_ii
+        pred, act = pts_ii.sum()/9, gt_ii.sum()/9
+        color1 = colorz3[ii]
+        color255 = (color1 * 255).astype(int)
+        for jj in range(3):
+            ax = axes[ii, jj]
+            if jj == 0:  # figure
+                mat = arr.copy()
+                mat[idx_ii_gt] = rgb_yellow
+                ax.imshow(mat, cmap='viridis', vmin=0, vmax=255)
+                ax.set_title('Annotations', fontsize=12)
+            elif jj == 1:  # scatter
+                mat = np.zeros(arr.shape) + 1
+                mat[idx_ii_gt] = color1
+                ax.imshow(mat, cmap='viridis', vmin=0, vmax=1)
+                ax.set_title('Actual: %i' % act, fontsize=12)
+            else:  # pred
+                mat = np.zeros(arr.shape) + 1
+                mat[idx_ii_pts] = color1
+                ax.imshow(mat, cmap='viridis', vmin=0, vmax=1)
+                ax.set_title('Predicted: %i' % pred, fontsize=12)
+    patches = [matplotlib.patches.Patch(color=colorz3[i], label=lbls[i]) for i in range(nlbl)]
+    fig.subplots_adjust(right=0.85)
+    fig.legend(handles=patches, bbox_to_anchor=(0.97, 0.5))
+    fig.suptitle(t='ID: %s' % idt, fontsize=16, weight='bold')
     fig.savefig(os.path.join(path, fn))
 
 
