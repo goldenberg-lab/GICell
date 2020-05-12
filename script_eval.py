@@ -2,7 +2,7 @@
 SCRIPT TO EVALUATE THE MODEL PERFORMANCE ACROSS DIFFERENT EPOCHS
 """
 
-import os, pickle
+import os
 import numpy as np
 import pandas as pd
 from funs_support import ljoin
@@ -29,6 +29,18 @@ dir_figures = os.path.join(dir_output, 'figures')
 dir_checkpoint = os.path.join(dir_output, 'checkpoint')
 lst_dir = [dir_output, dir_figures, dir_checkpoint]
 assert all([os.path.exists(path) for path in lst_dir])
+
+def jackknife_r2(act, pred):
+    assert len(act) == len(pred)
+    n = len(act)
+    vec = np.zeros(n)
+    r2 = r2_score( act , pred )
+    for ii in range(n):
+        vec[ii] = r2_score(np.delete(act, ii), np.delete(pred, ii))
+    mi, mx = min(vec), max(vec)
+    bias = r2 - np.mean(vec)
+    mi, mx = mi + bias, mx + bias
+    return mi, mx
 
 ############################
 ## --- (1) LOAD DATA  --- ##
@@ -64,16 +76,26 @@ for fold in di_fold:
 
 # Eosinophil ratio
 df_cell = pd.concat(holder_cell).reset_index(None, True)  #[df_cell.epoch == vec_epochs.min()]
-# !!! PAIR WITH THE DIFFERENT EPOCHS OF EACH !!! #
+dat_act = df_cell.groupby(['id','cell']).act.mean().reset_index().assign(act = lambda x: x.act.astype(int))
+dat_act = dat_act.pivot('id','cell','act').reset_index().assign(ratio = lambda x: x.eosin / x.inflam).fillna(0)
+di_id = df_cell.groupby(['id', 'tt']).size().reset_index().drop(columns=[0])
+di_id = dict(zip(di_id.id, di_id.tt))
 
-
-tmp = df_cell.melt(['id','epoch','cell','tt'],['act','pred'],'set')
-tmp = tmp.pivot_table('value',['id','epoch','set','tt'],'cell').reset_index().assign(ratio = lambda x: x.eosin / x.inflam).fillna(0)
-df_cell = tmp.drop(columns=['eosin','inflam']).pivot_table('ratio',['id','epoch','tt'],'set').reset_index()
-# df_ratio = df_cell[df_cell.epoch == vec_epochs.min()].pivot('id','cell','act').reset_index().assign(ratio = lambda x: x.eosin / x.inflam).fillna(0)
-# df_cell = df_cell.merge(df_ratio[['id','ratio']])
-dat_r2 = df_cell.groupby(['epoch','tt']).apply(lambda x: r2_score(x.act, x.pred)).reset_index().rename(columns={0:'r2'})
-
+tmp1 = df_cell[df_cell.cell == 'inflam'].pivot('id','epoch','pred').reset_index()
+tmp2 = df_cell[df_cell.cell == 'eosin'][['id','pred','epoch']]
+df_ratio = tmp2.merge(tmp1,'outer','id').melt(tmp2.columns,None,'epoch_inflam','inflam').rename(columns={'pred':'eosin','epoch':'epoch_eosin'})
+df_ratio = dat_act[['id','ratio']].merge(df_ratio,'right','id').assign(pred = lambda x: x.eosin / x.inflam)
+df_ratio.insert(1,'tt',df_ratio.id.map(di_id))
+# Calculate the r-squared by epoch pairs
+dat_r2 = df_ratio.groupby(['epoch_eosin','epoch_inflam','tt']).apply(lambda x:
+             pd.Series({'r2':r2_score(x.ratio, x.pred),'ci':jackknife_r2(x.ratio.values, x.pred.values)})).reset_index()
+dat_r2 = pd.concat([dat_r2.drop(columns=['ci']), pd.DataFrame(np.vstack(dat_r2.ci),columns=['lb','ub'])],1)
+dat_r2 = dat_r2.assign(epoch = lambda x: 'e'+x.epoch_eosin.astype(str) + '_' + 'i'+x.epoch_inflam.astype(str))
+# dataframe for best combo
+dat_epoch = dat_r2.pivot('epoch','tt','r2').reset_index().assign(diff = lambda x: x.Training - x.Validation)
+dat_epoch = dat_epoch.sort_values('Validation',ascending=False).reset_index(None,True)
+print(dat_epoch.head(1))
+print(dat_r2[dat_r2.epoch == 'e100_i50'].T)
 
 # Performance over time
 df_perf = pd.concat(holder_perf).reset_index(None, True)
@@ -85,6 +107,37 @@ df_perf = df_perf[df_perf.val >= -0.1]
 
 ###############################
 ## --- (2) MAKE FIGURES  --- ##
+
+# args order: x, y, lower bound, upperbound
+def custom_CI(*args, **kwargs):
+    data = kwargs.pop('data')
+    assert pd.Series(args).isin(data.columns).all()
+    x, y, lb, ub = data[args[0]].values, data[args[1]].values, data[args[2]].values, data[args[3]].values
+    errors = np.vstack([y - lb, ub - y])
+    plt.errorbar(x, y,  yerr=errors, **kwargs)
+    plt.scatter(x, y, **kwargs)
+
+# Best Epoch combo
+plt.close('all')
+g = sns.FacetGrid(dat_r2, hue='tt', height=4.5, aspect=1.2) #[(dat_r2.lb > -1) & (dat_r2.ub <= 1)]
+g.map_dataframe(custom_CI, 'epoch', 'r2', 'lb', 'ub')
+g.add_legend()
+g._legend.set_title('')
+yt = np.round(np.arange(-1, 1.01, 0.25),2)
+for ax in g.axes.flat:
+    ax.set_ylim(-1, 1)
+    ax.set_yticks(yt)
+    ax.set_yticklabels(yt)
+g.set_xticklabels(rotation=90)
+g.set_xlabels('Epoch combination')
+g.fig.suptitle('R-squared by epoch combination',size=14, weight='bold')
+g.fig.subplots_adjust(top=0.9)
+g.savefig(os.path.join(dir_figures,'best_epoch.png'))
+
+
+
+
+
 
 # Training/validation performance
 plt.close('all')

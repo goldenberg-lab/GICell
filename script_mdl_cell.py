@@ -17,8 +17,8 @@ learning_rate = args.learning_rate
 num_params = args.num_params
 epoch_check = args.epoch_check
 
-# # for beta testing
-# cells, num_epochs, batch_size, learning_rate, num_params, epoch_check = ['eosinophil'], 500, 2, 1e-3, 8, 1
+# # for beta testing  ['eosinophil']
+# cells, num_epochs, batch_size, learning_rate, num_params, epoch_check = valid_cells, 500, 2, 1e-3, 8, 1
 valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
 assert all([z in valid_cells for z in cells])
 
@@ -81,7 +81,7 @@ for idt in ids_tissue:
     tmp3 = di_img_point[idt]['pts'].copy()
     tmp3 = tmp3[tmp3.cell.isin(cells)]
     di_img_point[idt]['lbls'] = tmp2
-    assert tmp3.shape[0] == int(np.round(tmp2.sum() / 9))
+    assert np.abs( tmp3.shape[0] - (tmp2.sum() / 9) ) < 1
     del tmp, tmp2, tmp3
 
 # Get the mean number of cells
@@ -149,7 +149,7 @@ torch.cuda.empty_cache()
 ## --- (2) BEGIN TRAINING --- ##
 
 # Select instances for training/validation
-idt_val = ['49TJHRED_Rectum_30', 'RADS40DE_Rectum_13', '8HDFP8K2_Transverse_5',
+idt_val = ['R9I7FYRB_Transverse_17', 'RADS40DE_Rectum_13', '8HDFP8K2_Transverse_5',
            '49TJHRED_Descending_46', 'BLROH2RX_Cecum_72', '8ZYY45X6_Sigmoid_19',
            '6EAWUIY4_Rectum_56', 'BCN3OLB3_Descending_79']
 idt_train = df_cells.id[~df_cells.id.isin(idt_val)].to_list()
