@@ -1,9 +1,6 @@
-# SCRIPT TO TEST THE POINT PROCESSING #
-
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('-n','--n_hours', help="Number of hours to consider",
-                    default=24,type=float)
+parser.add_argument('-n','--n_hours', help="Number of hours to consider",default=24,type=float)
 args = parser.parse_args()
 n_hours = args.n_hours
 
@@ -23,7 +20,7 @@ matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from PIL import Image
 
-from support_funs_GI import stopifnot, zip_points_parse
+from funs_support import stopifnot, zip_points_parse
 
 dir_base = os.getcwd() # 'C:\\Users\\erik drysdale\\Documents\\projects\\GI'
 dir_images = os.path.join(dir_base, '..', 'images')
@@ -53,9 +50,9 @@ print('The following images were annotated within %0.1f hours: %s' %
       (n_hours,', '.join(fn_points)))
 
 plt.close()
-nc = 2
+nc = 5
 npoint = len(fn_points)
-nr = (npoint // 2) + (npoint % 2)
+nr = (npoint // nc) + int((npoint % nc)>0)
 fig, axes = plt.subplots(nrows=nr, ncols=nc, figsize=(nc*5, nr*5))
 for ii_fn, ax in zip(enumerate(fn_points),axes.flatten()):
     ii, fn = ii_fn[0], ii_fn[1]

@@ -163,7 +163,8 @@ def val_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
             else:  # pred
                 mat = np.zeros(arr.shape) + 1
                 mat[idx_ii_pts] = color1
-                ax.imshow(mat, cmap='viridis', vmin=0, vmax=1)
+                mat2 = np.dstack([mat, np.sqrt(pts_ii / pts_ii.max())])
+                ax.imshow(mat2, cmap='viridis', vmin=0, vmax=1)
                 ax.set_title('Predicted: %i' % pred, fontsize=12)
     patches = [matplotlib.patches.Patch(color=colorz3[i], label=lbls[i]) for i in range(nlbl)]
     fig.subplots_adjust(right=0.85)
