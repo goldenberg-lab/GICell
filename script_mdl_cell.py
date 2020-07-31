@@ -18,7 +18,7 @@ num_params = args.num_params
 epoch_check = args.epoch_check
 
 # # for beta testing  ['eosinophil']
-# cells, num_epochs, batch_size, learning_rate, num_params, epoch_check = valid_cells, 500, 2, 1e-3, 8, 1
+# cells, num_epochs, batch_size, learning_rate, num_params, epoch_check = ['eosinophil'], 500, 2, 1e-3, 8, 1
 valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
 assert all([z in valid_cells for z in cells])
 

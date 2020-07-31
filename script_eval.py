@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from funs_support import ljoin, makeifnot, jackknife_r2
 import torch
+from datetime import datetime
 
 from sklearn.metrics import r2_score
 
@@ -15,6 +16,7 @@ if not matplotlib.get_backend().lower() == 'agg':
     matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import seaborn as sns
+from plotnine import *
 
 use_cuda = torch.cuda.is_available()
 if use_cuda:
@@ -84,10 +86,12 @@ dat_r2 = df_ratio.groupby(['epoch_eosin','epoch_inflam','tt']).apply(lambda x:
 dat_r2 = pd.concat([dat_r2.drop(columns=['ci']), pd.DataFrame(np.vstack(dat_r2.ci),columns=['lb','ub'])],1)
 dat_r2 = dat_r2.assign(epoch = lambda x: 'e'+x.epoch_eosin.astype(str) + '_' + 'i'+x.epoch_inflam.astype(str))
 # dataframe for best combo
-dat_epoch = dat_r2.pivot('epoch','tt','r2').reset_index().assign(diff = lambda x: x.Training - x.Validation)
-dat_epoch = dat_epoch.sort_values('Validation',ascending=False).reset_index(None,True)
+dat_epoch = dat_r2.pivot('epoch','tt','r2').reset_index().assign(desc = lambda x: np.abs(x.Training - x.Validation),perf=lambda x: (x.Training + x.Validation)/2)
+dat_epoch = dat_epoch.assign(score=lambda x: x.perf - x.desc/2).sort_values('score',ascending=False).reset_index(None,True)
 # Get "best" epoch combo
 epoch_star = dat_epoch.loc[0,'epoch']
+epoch_eosin, epoch_inflam = tuple([int(z[1:]) for z in epoch_star.split('_')])
+print('Best epoch is eosin: %i, inflam %i' % (epoch_eosin, epoch_inflam))
 lb_star = dat_r2[dat_r2.epoch == epoch_star].lb.min()
 ub_star = dat_r2[dat_r2.epoch == epoch_star].ub.max()
 r2_star = dat_r2[dat_r2.epoch == epoch_star].r2.mean()
@@ -95,16 +99,16 @@ print('The best epoch is: %s (r2=%0.1f%%, (%0.1f%%, %0.1f%%))' %
       (epoch_star, r2_star*100, lb_star*100, ub_star*100))
 
 # Make copies of the models for future use
-epoch_eosin, epoch_inflam = tuple([re.sub('[a-z]','',z) for z in epoch_star.split('_')])
-dir_eosin = os.path.join(dir_checkpoint,'eosinophil','epoch_'+epoch_eosin)
-dir_inflam = os.path.join(dir_checkpoint,'eosinophil_lymphocyte_neutrophil_plasma','epoch_'+epoch_inflam)
+dir_snapshot = os.path.join(dir_checkpoint,'snapshot')
+dir_eosin = os.path.join(dir_checkpoint,'eosinophil','epoch_'+str(epoch_eosin))
+dir_inflam = os.path.join(dir_checkpoint,'eosinophil_lymphocyte_neutrophil_plasma','epoch_'+str(epoch_inflam))
 # Save pred/act by tt
-dat_cell_star = pd.concat([df_cell[(df_cell.cell == 'inflam') & (df_cell.epoch == int(epoch_inflam))],
-                           df_cell[(df_cell.cell == 'eosin') & (df_cell.epoch == int(epoch_eosin))]],0)
-dat_cell_star.to_csv(os.path.join(dir_checkpoint, 'dat_star.csv'), index=False)
+dat_cell_star = pd.concat([df_cell[(df_cell.cell == 'inflam') & (df_cell.epoch == int(epoch_inflam))], df_cell[(df_cell.cell == 'eosin') & (df_cell.epoch == int(epoch_eosin))]],0)
 
-shutil.copy(os.path.join(dir_eosin, 'mdl_'+epoch_eosin+'.pt'), os.path.join(dir_checkpoint, 'mdl_eosin.pt'))
-shutil.copy(os.path.join(dir_inflam, 'mdl_'+epoch_inflam+'.pt'), os.path.join(dir_checkpoint, 'mdl_inflam.pt'))
+yymmdd = datetime.now().strftime('%Y_%m_%d')
+dat_cell_star.to_csv(os.path.join(dir_snapshot, 'dat_star_' + yymmdd + '.csv'), index=False)
+shutil.copy(os.path.join(dir_eosin, 'mdl_'+str(epoch_eosin)+'.pt'), os.path.join(dir_snapshot, 'mdl_eosin_' + yymmdd + '.pt'))
+shutil.copy(os.path.join(dir_inflam, 'mdl_'+str(epoch_inflam)+'.pt'), os.path.join(dir_snapshot, 'mdl_inflam_' + yymmdd + '.pt'))
 
 # # Performance over time
 # df_perf = pd.concat(holder_perf).reset_index(None, True)
@@ -114,26 +118,90 @@ shutil.copy(os.path.join(dir_inflam, 'mdl_'+epoch_inflam+'.pt'), os.path.join(di
 # df_perf = df_perf.assign(metric = lambda x: x.metric.map(di_metric), tt = lambda x: x.tt.map(di_tt))
 # df_perf = df_perf[df_perf.val >= -0.1]
 
+# Is r-squared different for the non-zero values?
+print(df_ratio[df_ratio.ratio > 0].groupby(['epoch_eosin','epoch_inflam','tt']).apply(lambda x: r2_score(x.ratio, x.pred)).reset_index().pivot_table(0,['epoch_eosin','epoch_inflam'],'tt').reset_index().sort_values('Training',ascending=False))
+# Currently not much of a performance gain for training...
+
+#################################
+## --- (2) ANALYZE RATIOS  --- ##
+
+def get_split(x,pat='\\s',k=0,n=5):
+    return x.str.split(pat,n,True).iloc[:,k]
+
+# Let's look at predictions/act above 0.75
+df_best = df_ratio[(df_ratio.epoch_eosin==epoch_eosin) & ((df_ratio.epoch_inflam==epoch_inflam))].reset_index(None,True).drop(columns=['epoch_eosin','epoch_inflam'])
+df_best = df_best.drop(columns='ratio').rename(columns={'pred':'ratio'}).merge(dat_act,'left',['id','tt'],suffixes=('_pred','_act'))
+df_best_long = df_best.melt(['id','tt'],None,'tmp').assign(metric=lambda x: get_split(x.tmp,'_',0),gt=lambda x: get_split(x.tmp,'_',1)).drop(columns='tmp')
+df_best_wide = df_best_long.pivot_table('value',['id','tt','metric'],'gt').reset_index()
+
+gg_best = (ggplot(df_best_wide, aes(x='pred',y='act',color='tt')) + theme_bw() +
+           geom_point() + geom_abline(slope=1,intercept=0,linetype='--') +
+           facet_wrap('~metric',scales='free') +
+           labs(x='Predicted',y='Actual') +
+           theme(legend_position='bottom',panel_spacing=0.5,
+                 legend_box_spacing=0.3) +
+           scale_color_discrete(name=' '))
+gg_best.save(os.path.join(dir_figures,'gg_best.png'),height=5,width=10)
+
+idx = pd.IndexSlice
+tmp = df_best_long.pivot_table('value',['id','tt'],['metric','gt'])
+tmp = pd.concat([tmp.loc[:,idx[['eosin','inflam'],'pred']].droplevel(level=1,axis=1).reset_index(),tmp.loc[:,idx[['ratio'],'act']].droplevel(level=1,axis=1).reset_index().ratio],1)
+
+gg_heat = (ggplot(tmp, aes(x='eosin',y='inflam',fill='ratio',shape='tt')) +
+           theme_bw() + geom_point(size=3) +
+           scale_fill_cmap(cmap_name='YlGnBu') +
+           ggtitle('Predicted cell counts and actual ratio') +
+           labs(x='Predicted Eosinophils',y='Actual eosinophils'))
+gg_heat.save(os.path.join(dir_figures,'gg_heat.png'),height=7,width=7)
+
+# Can a GP help?
+from sklearn.gaussian_process import GaussianProcessRegressor, GaussianProcessClassifier
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel, DotProduct, RationalQuadratic, PairwiseKernel
+from sklearn.preprocessing import StandardScaler
+
+def logit(x,eps=1e-4):
+    assert np.all((x >= 0) | (x<= 1))
+    x = np.where(x==0, eps, np.where(x==1, 1-eps, x))
+    return np.log(x/(1-x))
+
+kern = WhiteKernel(0.1) + 0.1**2 * RBF(1, (0.1, 100))
+gpr = GaussianProcessRegressor(kernel=kern, n_restarts_optimizer=5,
+                               normalize_y=True,random_state=1234)
+Xtrain = tmp.loc[tmp.tt=='Training',['eosin','inflam']].values
+ytrain = tmp.loc[tmp.tt=='Training','ratio'].values
+enc = StandardScaler().fit(Xtrain)
+Xtrain = enc.transform(Xtrain)
+X = enc.transform(tmp.loc[:,['eosin','inflam']].values)
+y = tmp.loc[:,'ratio'].values
+gpr.fit(Xtrain, ytrain)
+print(gpr.kernel_)
+print(r2_score(y,gpr.predict(X)))
+
+res = pd.DataFrame({'y':y,'tt':tmp.tt,'yhat':gpr.predict(X),'se':gpr.predict(X,True)[1]})
+
+gg_gpr = (ggplot(res,aes(x='yhat',y='y',color='tt')) + theme_bw() +
+          geom_point() + geom_abline(slope=1,intercept=0,linetype='--') +
+          ggtitle('Gaussian Process model'))
+gg_gpr.save(os.path.join(dir_figures,'gg_gpr.png'),height=5,width=5)
+
+
+
+
+
+
 ###############################
-## --- (2) MAKE FIGURES  --- ##
+## --- (3) MAKE FIGURES  --- ##
 
 # --- FIGURE 1: EOSIN RATIO BY ID --- #
-tmp = dat_act.reset_index()
-plt.close('all')
-g = sns.FacetGrid(tmp, hue='tt', height=5, aspect=1.25)
-g.map(plt.scatter, 'index', 'ratio')
-g.set_xlabels('')
-g.set_ylabels('Eosinophilic ratio')
-g.add_legend()
-g._legend.set_title('')
-for ax in g.axes.flat:
-    ax.set_xticks(np.arange(tmp.shape[0]))
-    ax.set_xticklabels(tmp.id.values)
-g.set_xticklabels(rotation=90, size=8)
-g.fig.suptitle('Distribution of eosinophilic ratios',size=14,weight='bold')
-g.fig.subplots_adjust(top=0.9)
-g.savefig(os.path.join(dir_figures,'id_ratio.png'))
+tmp = dat_act.copy()
+tmp.id = pd.Categorical(tmp.id, tmp.sort_values('ratio').id)
 
+gg_id = (ggplot(tmp, aes(x='id',y='ratio',color='tt')) + theme_bw() +
+         geom_point() + labs(y='Eosinophilic ratio') +
+         ggtitle('Distribution of eosinophilic ratios') +
+         theme(axis_title_x=element_blank(),panel_grid_major_x=element_blank(),
+               axis_text_x=element_text(angle=90,size=6)))
+gg_id.save(os.path.join(dir_figures,'id_ratio.png'),height=5,width=8)
 
 # --- FIGURE 2: R2 FOR RATIO BY EPOCH --- #
 
@@ -146,83 +214,39 @@ def custom_CI(*args, **kwargs):
     plt.errorbar(x, y,  yerr=errors, **kwargs)
     plt.scatter(x, y, **kwargs)
 
-# Best Epoch combo
-plt.close('all')
-g = sns.FacetGrid(dat_r2, hue='tt', height=4.5, aspect=1.2) #[(dat_r2.lb > -1) & (dat_r2.ub <= 1)]
-g.map_dataframe(custom_CI, 'epoch', 'r2', 'lb', 'ub')
-g.add_legend()
-g._legend.set_title('')
-yt = np.round(np.arange(-1, 1.01, 0.25),2)
-for ax in g.axes.flat:
-    ax.set_ylim(-1, 1)
-    ax.set_yticks(yt)
-    ax.set_yticklabels(yt)
-g.set_xticklabels(rotation=90)
-g.set_xlabels('Epoch combination')
-g.fig.suptitle('R-squared by epoch combination',size=14, weight='bold')
-g.fig.subplots_adjust(top=0.9)
-g.savefig(os.path.join(dir_figures,'best_epoch.png'))
-
-# # Training/validation performance
-# plt.close('all')
-# g = sns.FacetGrid(df_perf, row='cell', col='metric', sharex=True, sharey=False, hue='tt')
-# g.map(plt.scatter, 'epoch', 'val')
-# g.set_xlabels('Epoch')
-# g.set_ylabels('Value')
-# g.savefig(os.path.join(dir_figures,'epoch_perf.png'))
+tmp = dat_r2.assign(sig = lambda x: x.epoch == epoch_star)
+gg_epoch = (ggplot(tmp,aes(x='epoch',y='r2',color='tt',alpha='sig')) + theme_bw() +
+            geom_point() + labs(x='Epoch combination',y='R-squared') +
+            geom_linerange(aes(ymin='lb',ymax='ub')) +
+            scale_alpha_manual(values=[0.3,1]) +
+            guides(alpha=False) +
+            ggtitle('R-squared by epoch combination') +
+            theme(axis_text_x=element_text(angle=90)) +
+            scale_y_continuous(limits=[-2,1]))
+gg_epoch.save(os.path.join(dir_figures,'best_epoch.png'),width=6, height=6)
 
 # --- FIGURE 3: PREDICTED/ACTUAL BY EPOCH --- #
 
-# yt = np.round(np.arange(0,0.6,0.1),1)
-# Predicted vs actual by epoch
-plt.close('all')
-g = sns.FacetGrid(df_cell, col='epoch', row='cell', sharex=False, sharey=False, hue='tt')  #, col_wrap=3
-g.map(plt.scatter, 'pred', 'act')
-g.set_xlabels('Predicted')
-g.set_ylabels('Actual')
-g.fig.suptitle('Eosinophil/Inflammatory prediction',size=14,weight='bold')
-g.fig.subplots_adjust(top=0.88)
-g.add_legend()
-g._legend.set_title('')
-for ax in g.axes.flat:
-    tit = ax.get_title().split(' = ')[1].split(' | ')[0]
-    print(tit)
-    if tit == 'eosin':
-        mi, mx = -3, 65
-        xt = np.arange(0, 61, 15)
-    else:
-        mi, mx = -3, 275
-        xt = np.arange(0,250+1, 50)
-    ax.set_ylim(mi, mx)
-    ax.set_xlim(mi, mx)
-    ax.set_yticks(xt)
-    ax.set_xticks(xt)
-    ax.set_yticklabels(xt)
-    ax.set_xticklabels(xt)
-    ax.plot([0,mx],[0,mx],c='black',linestyle='--')
-g.savefig(os.path.join(dir_figures,'pred_act_cells.png'))
+gg_pred = (ggplot(df_cell, aes(x='pred',y='act', color='tt')) + theme_bw() + geom_point() +
+           labs(x='Predicted',y='Actual') + ggtitle('Eosinophil/Inflammatory prediction') +
+           geom_abline(intercept=0,slope=1,color='black',linetype='--') +
+           theme(legend_position='bottom',panel_spacing=0.5) +
+           facet_wrap('~cell+epoch',scales='free',labeller=label_both,ncol=5) +
+           scale_color_discrete(name=' '))
+gg_pred.save(os.path.join(dir_figures,'pred_act_cells.png'),width=12,height=7)
 
 # --- FIGURE 4: RATIO BY EPOCH COMBO --- #
 
 tmp = df_ratio.assign(epoch = lambda x: 'e'+x.epoch_eosin.astype(str) + '_' + 'i'+x.epoch_inflam.astype(str))
 
-plt.close('all')
-g = sns.FacetGrid(tmp, col='epoch', col_wrap=5, hue='tt')  #, col_wrap=3
-g.map(plt.scatter, 'pred', 'ratio')
-g.set_xlabels('Predicted')
-g.set_ylabels('Actual')
-g.fig.suptitle('Eosinophil ratio prediction comparison',size=24,weight='bold')
-g.fig.subplots_adjust(top=0.90)
-g.add_legend()
-g._legend.set_title('')
-xt = np.round(np.arange(0, 0.61, 0.15), 2)
-for ax in g.axes.flat:
-    ax.set_xticks(xt)
-    ax.set_yticks(xt)
-    ax.set_yticklabels(xt)
-    ax.set_xticklabels(xt)
-    ax.set_xlim((-0.05, max(xt)))
-    ax.set_ylim((-0.05, max(xt)))
-    ax.plot([0, max(xt)], [0, max(xt)], c='black', linestyle='--')
-g.savefig(os.path.join(dir_figures,'pred_act_ratio.png'))
+gg_ratio = (ggplot(tmp, aes(x='pred',y='ratio',color='tt')) + theme_bw() + geom_point() +
+           labs(x='Predicted',y='Actual') + ggtitle('Eosinophil ratio prediction comparison') +
+           theme(panel_spacing=0.10, panel_grid_major=element_blank(),
+                 axis_text_x=element_text(angle=90)) +
+           facet_grid('epoch_eosin~epoch_inflam',labeller=label_both) +
+           geom_abline(intercept=0,slope=1,color='black',linetype='--'))
+gg_ratio.save(os.path.join(dir_figures,'pred_act_ratio.png'),height=9,width=10)
+
+
+
 

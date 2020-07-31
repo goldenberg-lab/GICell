@@ -59,7 +59,8 @@ for ii, fn in enumerate(fn_points):
     lbls = label_blur(idx=idx_xy, cells=df_ii.cell.values, vcells=valid_cells,
                       shape=img_vals.shape[0:2], fill=fill, s2=s2)
     di_img_point[idt]['lbls'] = lbls.copy()
-    assert np.abs(np.sum(lbls) / fillfac ** 2 - idx_xy.shape[0]) < 1
+    err = np.round(np.abs(np.sum(lbls) / fillfac ** 2 - idx_xy.shape[0]), 1)
+    assert err <= 1.0
 
 print(len(di_img_point))
 assert all([di_img_point[z]['img'].shape[0]>0 for z in di_img_point])

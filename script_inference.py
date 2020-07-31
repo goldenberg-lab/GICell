@@ -28,7 +28,8 @@ dir_base = os.getcwd()
 dir_output = os.path.join(dir_base, '..', 'output')
 dir_figures = os.path.join(dir_output, 'figures')
 dir_checkpoint = os.path.join(dir_output, 'checkpoint')
-lst_dir = [dir_output, dir_figures, dir_checkpoint]
+dir_snapshot = os.path.join(dir_checkpoint, 'snapshot')
+lst_dir = [dir_output, dir_figures, dir_checkpoint, dir_snapshot]
 assert all([os.path.exists(path) for path in lst_dir])
 dir_inference = os.path.join(dir_figures, 'inference')
 makeifnot(dir_inference)
@@ -61,11 +62,21 @@ for idt in ids_tissue:
 mdl_eosin, mdl_inflam = UNet(3, 1, 16), UNet(3, 1, 16)
 mdl_eosin.to(device)
 mdl_inflam.to(device)
-mdl_eosin.load_state_dict(torch.load(os.path.join(dir_checkpoint, 'mdl_eosin.pt')))
-mdl_inflam.load_state_dict(torch.load(os.path.join(dir_checkpoint, 'mdl_inflam.pt')))
+fns_snapshot = pd.Series(os.listdir(dir_snapshot))
+df_snapshot = fns_snapshot.str.replace('.[a-z]*$','').str.split('_',2,True).assign(file=fns_snapshot)
+df_snapshot.columns = ['tt','sub','date','file']
+df_snapshot.date = pd.to_datetime(df_snapshot.date,format='%Y_%m_%d')
+df_snapshot = df_snapshot.sort_values(['date','tt','sub'],ascending=False).reset_index(None,True)
+fns_snapshot = df_snapshot.loc[0:2].file
+fn_inflam = list(fns_snapshot[fns_snapshot.str.contains('mdl_inflam')])[0]
+fn_eosin = list(fns_snapshot[fns_snapshot.str.contains('mdl_eosin')])[0]
+fn_dat = list(fns_snapshot[fns_snapshot.str.contains('dat_star')])[0]
+
+mdl_eosin.load_state_dict(torch.load(os.path.join(dir_snapshot, fn_eosin)))
+mdl_inflam.load_state_dict(torch.load(os.path.join(dir_snapshot, fn_inflam)))
 
 # Load the predicted/actual data
-dat_star = pd.read_csv(os.path.join(dir_checkpoint, 'dat_star.csv'))
+dat_star = pd.read_csv(os.path.join(dir_snapshot, fn_dat))
 di_id = dat_star.groupby(['tt','id']).size().reset_index()
 di_id = dict(zip(di_id.id, di_id.tt))
 # Get the training/validation IDs
@@ -89,13 +100,13 @@ for idt in idt_val:
         phat_eosin = sigmoid(logits_eosin)
     pred_inflam, pred_eosin = phat_inflam.sum()/9, phat_eosin.sum()/9
     act_inflam, act_eosin = int(np.round(gt_inflam.sum()/9,0)), int(np.round(gt_eosin.sum()/9,0))
-    print('ID: %s -- pred inflam: %i, eosin: %i' % (idt, pred_inflam, pred_eosin) )
+    print('ID: %s -- pred inflam: %i (%i), eosin: %i (%i)' %
+          (idt, pred_inflam, act_inflam, pred_eosin, act_eosin) )
     # Seperate eosin from inflam
-    # np.quantile(phat_eosin, 1 - phat_eosin.sum() / 501 ** 2)
     thresh_eosin, thresh_inflam = np.quantile(phat_eosin, 0.99), np.quantile(phat_inflam, 0.99)
-    # gt_inflam[np.where(gt_eosin != 0)] = 0
-    # phat_inflam[np.where(phat_eosin > thresh_eosin)] = 0
-    phat = np.dstack([phat_eosin, phat_inflam])  #
+    print('Threshold inflam: %0.3f, eosin: %0.3f' % (thresh_inflam, thresh_eosin))
+    thresh_eosin, thresh_inflam = 0.01, 0.01
+    phat = np.dstack([phat_eosin, phat_inflam])
     gt = np.dstack([gt_eosin, gt_inflam])
     idx_cell_other = gt_inflam - gt_eosin > 0
     idx_cell_eosin = gt_eosin > 0
@@ -106,26 +117,76 @@ for idt in idt_val:
                   'null': num_null, 'tot': np.sum(idx_eosin),
                   'pred':pred_eosin, 'act': act_eosin}, index=[0])
     holder.append(tmp)
-
     val_plt(img, phat, gt, lbls=['eosin', 'inflam'], path=dir_inference,
              thresh=[thresh_eosin, thresh_inflam], fn=idt+'.png')
 # Find correlation between...
-df_inf = pd.concat(holder).reset_index(None, True)
-df_inf = df_inf.melt(['idt','pred','act','tot'],None, 'tt', 'n').assign(ratio = lambda x: x.n / x.tot).sort_values(['act','tt'])
+df_inf = pd.concat(holder).reset_index(None, True).melt(['idt','pred','act','tot'],None, 'tt', 'n')
+df_inf = df_inf.merge(df_inf.groupby('idt').n.sum().reset_index().rename(columns={'n':'den'}),'left','idt')
+df_inf = df_inf.assign(ratio = lambda x: x.n / x.den).sort_values(['act','tt'])
+tmp = df_inf.assign(tt=lambda x: pd.Categorical(x.tt,['null','other','eosin']))
+tmp.act = pd.Categorical(tmp.act.astype(str),tmp.act.unique().astype(str))
 
-xt = range(len(idt_val))
-fig, ax = plt.subplots(1, 1, figsize=(7,8))
-ax.bar(xt, df_inf[df_inf.tt == 'eosin'].ratio, width=0.5)
-ax.bar(xt, df_inf[df_inf.tt == 'other'].ratio, width=0.5)
-ax.set_xticks(xt)
-ax.set_xticklabels(df_inf.act.unique())
-# ax.set_xticklabels(idt_val, rotation=90, size=8)
-ax.set_ylabel('Percent')
-ax.set_xlabel('# of actual eosinophils')
-fig.legend(['eosin', 'other'], loc='right')
-fig.suptitle('Distribution of points > threshold', size=16, weight='bold')
-fig.subplots_adjust(bottom=0.25)
-fig.savefig(os.path.join(dir_figures,'inf_fp_ratio.png'))
+gg_inf = (ggplot(tmp, aes(x='act',y='ratio',fill='tt')) + theme_bw() +
+          geom_bar(stat='identity') + ggtitle('Distribution of points > threshold') +
+          labs(y='Percent', x='# of actual eosinophils') +
+          scale_fill_discrete(name='Cell type',labels=['Empty','Other Inflam','Eosin']))
+gg_inf.save(os.path.join(dir_figures,'inf_fp_ratio.png'))
+
+#############################################
+## --- (3) COMPARE TO PREVIOUS MODELS  --- ##
+
+tmp_inflam = df_snapshot[df_snapshot.file.str.contains('inflam')]
+tmp_eosin = df_snapshot[df_snapshot.file.str.contains('eosin')]
+mdl_dates = list(df_snapshot.date.dt.strftime('%Y-%m-%d').unique())
+di_mdls = {'eosin':dict(zip(tmp_eosin.date.dt.strftime('%Y-%m-%d'), tmp_eosin.file)),
+           'inflam':dict(zip(tmp_inflam.date.dt.strftime('%Y-%m-%d'), tmp_inflam.file))}
+for dates in mdl_dates:
+    for cell in di_mdls:
+        tmp = UNet(3, 1, 16).to(device)
+        tmp.load_state_dict(torch.load(os.path.join(dir_snapshot, di_mdls[cell][dates])))
+        di_mdls[cell][dates] = tmp
+        #print([z for z in di_mdls[cell][dates].down1.maxpool_conv.parameters()][0][11,12])
+
+
+for ii, idt in enumerate(idt_val):
+    print(ii+1)
+    img, gt = di_img_point[idt]['img'].copy(), di_img_point[idt]['lbls'].copy()
+    gt_eosin, gt_inflam = gt[:, :, [0]], gt[:, :, [1]]
+    timg = torch.tensor(img.transpose(2, 0, 1).astype(np.float32) / 255).to(device)
+    timg = timg.reshape([1] + list(timg.shape))
+    holder_phat, holder_gt, lbls = [], [], []
+    for cell in di_mdls:
+        for date in di_mdls[cell]:
+            lbls.append(cell + '_' + date)
+            if cell == 'eosin':
+                holder_gt.append(gt_eosin)
+            else:
+                holder_gt.append(gt_inflam)
+            print('Cell: %s, date: %s' % (cell, date))
+            with torch.no_grad():
+                logits = di_mdls[cell][date].eval()(timg).cpu().detach().numpy().sum(0).transpose(1,2,0)
+                phat = sigmoid(logits)
+                holder_phat.append(phat)
+    phat, gt = np.dstack(holder_phat), np.dstack(holder_gt)
+    assert phat.shape == gt.shape
+    val_plt(img, phat, gt, lbls=lbls, path=dir_inference,
+            thresh=list(np.repeat(0.01,len(lbls))), fn='comp_' + idt+'.png')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

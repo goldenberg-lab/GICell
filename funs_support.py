@@ -68,7 +68,7 @@ def jackknife_r2(act, pred):
     return mi, mx
 
 
-colorz3 = np.array([sns.color_palette(None)[k] for k in [0,1,2]])
+colorz3 = np.array([sns.color_palette(None)[k] for k in [0,1,2,3]])
 # arr=img.copy(); pts=phat.copy(); gt=gaussian.copy()
 # path=dir_ee;fn=idt+'.png';thresh=sigmoid(b0); lbls=agg_cells
 """
