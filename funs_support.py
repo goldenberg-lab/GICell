@@ -11,6 +11,9 @@ matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import seaborn as sns
 
+def t2n(x):
+    return x.cpu().detach().numpy()
+
 
 def makeifnot(path):
     if not os.path.exists(path):

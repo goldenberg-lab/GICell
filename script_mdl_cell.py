@@ -18,19 +18,19 @@ num_params = args.num_params
 epoch_check = args.epoch_check
 
 # # for beta testing  ['eosinophil']
-# cells, num_epochs, batch_size, learning_rate, num_params, epoch_check = ['eosinophil'], 500, 2, 1e-3, 8, 1
+# cells, num_epochs, batch_size, learning_rate, num_params, epoch_check = ['eosinophil'], 250, 2, 1e-3, 32, 1
 valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
 assert all([z in valid_cells for z in cells])
 
-print('Cells: %s\nnum_epochs: %i\nbatch_size: %i\nlearning_rate: %0.3f, num_params: %i' %
-      (', '.join(cells), num_epochs, batch_size, learning_rate, num_params))
+print('Cells: %s\nnum_epochs: %i\nbatch_size: %i\nlearning_rate: %0.3f, num_params: %i' % (', '.join(cells), num_epochs, batch_size, learning_rate, num_params))
 # import sys
 # sys.exit('end of script')
 
-import os, pickle
+import os
+import pickle
 import numpy as np
 import pandas as pd
-from funs_support import stopifnot, torch2array, sigmoid, ljoin, comp_plt, makeifnot, intax3
+from funs_support import stopifnot, torch2array, sigmoid, comp_plt, makeifnot, t2n
 from time import time
 import torch
 from funs_unet import UNet
@@ -56,6 +56,10 @@ device = torch.device('cuda' if use_cuda else 'cpu')
 ######################################
 ## --- (1) PREP DATA AND MODELS --- ##
 
+from datetime import datetime
+# Get current day
+dnow = datetime.now().strftime('%Y_%m_%d')
+
 dir_base = os.getcwd()
 dir_output = os.path.join(dir_base, '..', 'output')
 dir_figures = os.path.join(dir_output, 'figures')
@@ -63,8 +67,10 @@ lst_dir = [dir_output, dir_figures]
 [stopifnot(z) for z in lst_dir]
 dir_checkpoint = os.path.join(dir_output, 'checkpoint')
 dir_cell = os.path.join(dir_checkpoint, '_'.join(np.sort(cells)))
+dir_datecell = os.path.join(dir_cell, dnow)
 makeifnot(dir_checkpoint)
 makeifnot(dir_cell)
+makeifnot(dir_datecell)
 
 # Load data
 di_img_point = pickle.load(open(os.path.join(dir_output, 'di_img_point.pickle'), 'rb'))
@@ -100,16 +106,16 @@ num_agg = df_cells.drop(columns=['id']).sum(1).astype(int)
 df_cells = pd.DataFrame({'id':df_cells.id,'num_cell':num_cell,'num_agg':num_agg})
 df_cells = df_cells.assign(ratio = lambda x: x.num_cell/x.num_agg)
 df_cells = df_cells.sort_values('ratio').reset_index(None,True)
-tmp = df_cells.copy()
-num_val = int(np.floor(df_cells.shape[0] * 0.2))
-quants = np.linspace(0,1,num_val+2)[1:-1]
-cc_find = df_cells.ratio.quantile(quants,interpolation='lower').values
-holder = []
-for cc in cc_find:
-    idt = tmp.loc[tmp.ratio == cc,'id'].head(1).to_list()[0]
-    holder.append(idt)
-    tmp = tmp[tmp.id != idt]
-df_cells.insert(1,'tt',np.where(df_cells.id.isin(holder),'test','train'))
+# tmp = df_cells.copy()
+# num_val = int(np.floor(df_cells.shape[0] * 0.2))
+# quants = np.linspace(0,1,num_val+2)[1:-1]
+# cc_find = df_cells.ratio.quantile(quants,interpolation='lower').values
+# holder = []
+# for cc in cc_find:
+#     idt = tmp.loc[tmp.ratio == cc,'id'].head(1).to_list()[0]
+#     holder.append(idt)
+#     tmp = tmp[tmp.id != idt]
+# df_cells.insert(1,'tt',np.where(df_cells.id.isin(holder),'test','train'))
 print(df_cells)
 
 # Load the model
@@ -153,8 +159,7 @@ idt_val = ['R9I7FYRB_Transverse_17', 'RADS40DE_Rectum_13', '8HDFP8K2_Transverse_
            '49TJHRED_Descending_46', 'BLROH2RX_Cecum_72', '8ZYY45X6_Sigmoid_19',
            '6EAWUIY4_Rectum_56', 'BCN3OLB3_Descending_79']
 idt_train = df_cells.id[~df_cells.id.isin(idt_val)].to_list()
-print('%i training samples\n%i validation samples' %
-      (len(idt_train), len(idt_val)))
+print('%i training samples\n%i validation samples' % (len(idt_train), len(idt_val)))
 
 # Create datasetloader class
 train_params = {'batch_size': batch_size, 'shuffle': True}
@@ -171,8 +176,7 @@ val_transform = transforms.Compose([img2tensor(device)])
 val_data = CellCounterDataset(di=di_img_point, ids=idt_val, transform=val_transform,
                               multiclass=multiclass)
 val_gen = data.DataLoader(dataset=val_data,**val_params)
-eval_data = CellCounterDataset(di=di_img_point, ids=idt_train + idt_val, transform=val_transform,
-                               multiclass=multiclass)
+eval_data = CellCounterDataset(di=di_img_point, ids=idt_train + idt_val, transform=val_transform, multiclass=multiclass)
 eval_gen = data.DataLoader(dataset=eval_data, **eval_params)
 
 tnow = time()
@@ -200,8 +204,8 @@ for ee in range(num_epochs):
         optimizer.step()
         torch.cuda.empty_cache()  # Empty cache
         # --- Performance --- #
-        ii_loss = loss.cpu().detach().numpy()+0
-        ii_phat = sigmoid(logits.cpu().detach().numpy())
+        ii_loss = t2n(loss)+0
+        ii_phat = sigmoid(t2n(logits))
         ii_pred_act = np.zeros([nbatch, 2])
         for kk in range(nbatch):
             ii_pred_act[kk, 0] = ii_phat[kk].sum() / pfac
@@ -217,13 +221,14 @@ for ee in range(num_epochs):
     with torch.no_grad():
         for ids_batch, lbls_batch, imgs_batch in val_gen:
             logits = mdl.eval()(imgs_batch)
-            ii_phat = sigmoid(logits.cpu().detach().numpy())
-            ce_val = criterion(input=logits,target=lbls_batch).cpu().detach().numpy()+0
+            ii_phat = sigmoid(t2n(logits))
+            ce_val = t2n(criterion(input=logits,target=lbls_batch))+0
             nbatch = len(ids_batch)
             ii_pred_act = np.zeros([nbatch,2])
             for kk in range(nbatch):
                 ii_pred_act[kk, 0] = ii_phat[kk].sum() / pfac
                 ii_pred_act[kk, 1] = di_img_point[ids_batch[kk]]['lbls'].sum() / pfac
+                print(ids_batch); print(ii_pred_act[kk])
     val_pa = pd.DataFrame(ii_pred_act,columns=['pred','act'])
     val_pa.insert(0,'id',ids_batch)
     rho_val = metrics.r2_score(val_pa.act, val_pa.pred)
@@ -240,7 +245,7 @@ for ee in range(num_epochs):
     # Save plots and network every X epochs
     if (ee+1) % epoch_check == 0:
         print('------------ SAVING MODEL AT CHECKPOINT --------------')
-        dir_ee = os.path.join(dir_cell,'epoch_'+str(ee+1))
+        dir_ee = os.path.join(dir_datecell,'epoch_'+str(ee+1))
         if not os.path.exists(dir_ee):
             os.mkdir(dir_ee)
         with torch.no_grad():
@@ -256,7 +261,10 @@ for ee in range(num_epochs):
                     thresher = sigmoid(np.floor(np.array([b0])))
                 else:
                     thresher = sigmoid(np.floor(b0))
-                comp_plt(arr=img,pts=phat,gt=gaussian,path=dir_ee,fn=id+'.png',
+                tt = 'train'
+                if id in idt_val:
+                    tt = 'valid'
+                comp_plt(arr=img,pts=phat,gt=gaussian,path=dir_ee,fn=tt+'_'+id+'.png',
                          lbls=[', '.join(cells)], thresh=thresher)
                 holder.append([id, gaussian.sum() / pfac, phat.sum() / pfac])
         df_ee = pd.DataFrame(holder,columns=['id','act','pred'])
