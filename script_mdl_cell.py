@@ -192,6 +192,7 @@ mat_loss = np.zeros([num_epochs, 4])
 ee, ii = 0, 1
 for ee in range(num_epochs):
     print('--------- EPOCH %i of %i ----------' % (ee+1, num_epochs))
+    mdl.train()
     ii = 0
     np.random.seed(ee)
     torch.manual_seed(ee)
@@ -226,9 +227,10 @@ for ee in range(num_epochs):
     ce_train = np.mean(lst_ce)
     torch.cuda.empty_cache()  # Empty cache
     # Evaluate model on validation data
+    mdl.eval()
     with torch.no_grad():
         for ids_batch, lbls_batch, imgs_batch in val_gen:
-            logits = mdl.eval()(imgs_batch)
+            logits = mdl(imgs_batch)
             torch.cuda.empty_cache()  # Empty cache
             ii_phat = sigmoid(t2n(logits))
             ce_val = t2n(criterion(input=logits,target=lbls_batch))+0
@@ -257,12 +259,14 @@ for ee in range(num_epochs):
         dir_ee = os.path.join(dir_datecell,'epoch_'+str(ee+1))
         if not os.path.exists(dir_ee):
             os.mkdir(dir_ee)
+        mdl.eval()
         with torch.no_grad():
             holder = []
             for ids_batch, lbls_batch, imgs_batch in eval_gen:
                 id = ids_batch[0]
                 print('Making image for: %s' % id)
-                logits = mdl.eval()(imgs_batch).cpu().detach().numpy().sum(0).transpose(1,2,0)
+                logits = mdl.eval(imgs_batch)
+                logits = logits.cpu().detach().numpy().sum(0).transpose(1,2,0)
                 torch.cuda.empty_cache()  # Empty cache
                 phat = sigmoid(logits)
                 img = torch2array(imgs_batch).sum(3)
