@@ -6,6 +6,25 @@ import torch.nn.functional as F
 # import numpy as np
 # from unet_parts import DoubleConv, Down, Up, OutConv
 
+# Function that will the baseline parameter size for UNet model
+def find_bl_UNet(path, device):
+    cond = True
+    j = 1
+    preload = torch.load(path)
+    while cond:
+        bl = 2**j
+        mdl = UNet(3, 1, bl)
+        mdl.to(device)
+        try:
+            mdl.load_state_dict(preload)
+            cond = False
+            print('Model successfully loaded for bl=%i' % bl)
+        except:
+            print('Model will not load parameters for bl=%i' % bl)
+        j += 1  # Update
+    return mdl
+
+
 # x = torch.tensor(np.random.rand(1,3,501,501).astype(np.float32))
 # self = UNet(n_channels=3,n_classes=1)
 class UNet(nn.Module):

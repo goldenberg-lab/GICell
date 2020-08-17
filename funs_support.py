@@ -3,13 +3,32 @@ import pandas as pd
 import numpy as np
 from zipfile import ZipFile
 from scipy.ndimage import gaussian_filter
-from sklearn.metrics import r2_score
+from sklearn.metrics import mean_squared_error as mse
 
 import matplotlib
 
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import seaborn as sns
+
+from colorspace.colorlib import HCL
+
+def gg_color_hue(n):
+    hues = np.linspace(15, 375, num=n + 1)[:n]
+    hcl = []
+    for h in hues:
+        hcl.append(HCL(H=h, L=65, C=100).colors()[0])
+    return hcl
+
+
+def norm_mse(y,yhat):
+    mu, se = y.mean(), y.std()
+    y_til, yhat_til = (y-mu)/se, (yhat-mu)/se
+    return mse(y_til, yhat_til)
+
+
+def get_split(x,pat='\\s',k=0,n=5):
+    return x.str.split(pat,n,True).iloc[:,k]
 
 def t2n(x):
     return x.cpu().detach().numpy()
@@ -58,13 +77,17 @@ def stopifnot(cond):
     if not cond:
         sys.exit('error!')
 
-def jackknife_r2(act, pred):
+def jackknife_metric(act, pred, metric):
     assert len(act) == len(pred)
+    if isinstance(act, pd.Series):
+        act = act.values
+    if isinstance(pred, pd.Series):
+        pred = pred.values
     n = len(act)
     vec = np.zeros(n)
-    r2 = r2_score( act , pred )
+    r2 = metric( act , pred )
     for ii in range(n):
-        vec[ii] = r2_score(np.delete(act, ii), np.delete(pred, ii))
+        vec[ii] = metric(np.delete(act, ii), np.delete(pred, ii))
     mi, mx = min(vec), max(vec)
     bias = r2 - np.mean(vec)
     mi, mx = mi + bias, mx + bias

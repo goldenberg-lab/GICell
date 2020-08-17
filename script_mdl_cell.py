@@ -155,9 +155,17 @@ torch.cuda.empty_cache()
 ## --- (2) BEGIN TRAINING --- ##
 
 # Select instances for training/validation
-idt_val = ['R9I7FYRB_Transverse_17', 'RADS40DE_Rectum_13', '8HDFP8K2_Transverse_5',
+# Original list from May
+idt_val1 = ['R9I7FYRB_Transverse_17', 'RADS40DE_Rectum_13', '8HDFP8K2_Transverse_5',
            '49TJHRED_Descending_46', 'BLROH2RX_Cecum_72', '8ZYY45X6_Sigmoid_19',
            '6EAWUIY4_Rectum_56', 'BCN3OLB3_Descending_79']
+# Double validation list for August samples
+idt_val2 = ['ESZOXUA8_Transverse_80', '49TJHRED_Rectum_30', '8HDFP8K2_Ascending_35',
+            'BCN3OLB3_Descending_51', 'ESZOXUA8_Descending_91', '8ZYY45X6_Ascending_68',
+            'E9T0C977_Sigmoid_34', '9U0ZXCBZ_Cecum_41']
+assert len(np.intersect1d(idt_val1, idt_val2))==0
+idt_val = idt_val1 + idt_val2
+
 idt_train = df_cells.id[~df_cells.id.isin(idt_val)].to_list()
 print('%i training samples\n%i validation samples' % (len(idt_train), len(idt_val)))
 
