@@ -224,11 +224,12 @@ for ee in range(num_epochs):
     mat_pred_act = pd.DataFrame(np.vstack(lst_pred_act),columns=['pred','act'])
     rho_train = metrics.r2_score(mat_pred_act.act, mat_pred_act.pred)
     ce_train = np.mean(lst_ce)
-
+    torch.cuda.empty_cache()  # Empty cache
     # Evaluate model on validation data
     with torch.no_grad():
         for ids_batch, lbls_batch, imgs_batch in val_gen:
             logits = mdl.eval()(imgs_batch)
+            torch.cuda.empty_cache()  # Empty cache
             ii_phat = sigmoid(t2n(logits))
             ce_val = t2n(criterion(input=logits,target=lbls_batch))+0
             nbatch = len(ids_batch)
@@ -262,6 +263,7 @@ for ee in range(num_epochs):
                 id = ids_batch[0]
                 print('Making image for: %s' % id)
                 logits = mdl.eval()(imgs_batch).cpu().detach().numpy().sum(0).transpose(1,2,0)
+                torch.cuda.empty_cache()  # Empty cache
                 phat = sigmoid(logits)
                 img = torch2array(imgs_batch).sum(3)
                 gaussian = di_img_point[id]['lbls'].copy()
