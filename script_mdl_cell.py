@@ -259,13 +259,12 @@ for ee in range(num_epochs):
         dir_ee = os.path.join(dir_datecell,'epoch_'+str(ee+1))
         if not os.path.exists(dir_ee):
             os.mkdir(dir_ee)
-        mdl.eval()
         with torch.no_grad():
             holder = []
             for ids_batch, lbls_batch, imgs_batch in eval_gen:
                 id = ids_batch[0]
                 print('Making image for: %s' % id)
-                logits = mdl.eval(imgs_batch)
+                logits = mdl(imgs_batch)
                 logits = logits.cpu().detach().numpy().sum(0).transpose(1,2,0)
                 torch.cuda.empty_cache()  # Empty cache
                 phat = sigmoid(logits)
