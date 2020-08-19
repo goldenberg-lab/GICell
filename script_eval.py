@@ -139,6 +139,7 @@ print(epoch_star.drop(columns=cn_epoch))
 
 # Make copies of the models for future use
 dir_snapshot = os.path.join(dir_checkpoint,'snapshot')
+makeifnot(dir_snapshot)
 dir_eosin = os.path.join(dir_checkpoint,'eosinophil',fold_date,'epoch_'+str(epoch_eosin))
 dir_inflam = os.path.join(dir_checkpoint,'eosinophil_lymphocyte_neutrophil_plasma',fold_date,'epoch_'+str(epoch_inflam))
 # Save pred/act by tt

@@ -18,7 +18,8 @@ num_params = args.num_params
 epoch_check = args.epoch_check
 
 # # for beta testing  ['eosinophil']
-# cells, num_epochs, batch_size, learning_rate, num_params, epoch_check = ['eosinophil'], 250, 2, 1e-3, 32, 1
+# cells = ['eosinophil']
+# num_epochs, batch_size, learning_rate, num_params, epoch_check = 15, 1, 1e-3, 32, 15
 valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
 assert all([z in valid_cells for z in cells])
 
@@ -34,7 +35,7 @@ from funs_support import stopifnot, torch2array, sigmoid, comp_plt, makeifnot, t
 from time import time
 import torch
 from funs_unet import UNet
-from sklearn import metrics
+from sklearn.metrics import r2_score
 
 from funs_torch import CellCounterDataset, img2tensor, randomRotate, randomFlip
 from torchvision import transforms
@@ -45,6 +46,7 @@ if not matplotlib.get_backend().lower() == 'agg':
     matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import seaborn as sns
+from plotnine import *
 
 use_cuda = torch.cuda.is_available()
 if use_cuda:
@@ -172,36 +174,40 @@ print('%i training samples\n%i validation samples' % (len(idt_train), len(idt_va
 # Create datasetloader class
 train_params = {'batch_size': batch_size, 'shuffle': True}
 val_params = {'batch_size': len(idt_val),'shuffle': False}
-eval_params = {'batch_size': 1,'shuffle': False}
+eval_params = {'batch_size': len(idt_val),'shuffle': False}
 
 multiclass = False
 
-train_transform = transforms.Compose([randomRotate(tol=1e-4), randomFlip(), img2tensor(device)])
+# Traiing
+train_transform = transforms.Compose([randomRotate(tol=1e-4), randomFlip(),
+                                      img2tensor(device)])
 train_data = CellCounterDataset(di=di_img_point, ids=idt_train, transform=train_transform,
                                 multiclass=multiclass)
 train_gen = data.DataLoader(dataset=train_data,**train_params)
+# Validation
 val_transform = transforms.Compose([img2tensor(device)])
 val_data = CellCounterDataset(di=di_img_point, ids=idt_val, transform=val_transform,
                               multiclass=multiclass)
 val_gen = data.DataLoader(dataset=val_data,**val_params)
-eval_data = CellCounterDataset(di=di_img_point, ids=idt_train + idt_val, transform=val_transform, multiclass=multiclass)
+# Eval (all sample)
+eval_data = CellCounterDataset(di=di_img_point, ids=idt_train + idt_val,
+                               transform=val_transform, multiclass=multiclass)
 eval_gen = data.DataLoader(dataset=eval_data, **eval_params)
 
+mdl.train()
 tnow = time()
 mat_loss = np.zeros([num_epochs, 4])
 ee, ii = 0, 1
 for ee in range(num_epochs):
     print('--------- EPOCH %i of %i ----------' % (ee+1, num_epochs))
-    mdl.train()
-    ii = 0
     np.random.seed(ee)
     torch.manual_seed(ee)
-    lst_ce, lst_pred_act = [], []
+    lst_ce, lst_pred_act, lst_ids = [], [], []
+    ii = 0
     for ids_batch, lbls_batch, imgs_batch in train_gen:
         ii += 1
         ids_batch = list(ids_batch)
         nbatch = len(ids_batch)
-        print('-- batch %i of %i: %s --' % (ii, len(train_gen), ', '.join(ids_batch)))
         # --- Forward pass --- #
         optimizer.zero_grad()
         logits = mdl(imgs_batch)
@@ -211,96 +217,98 @@ for ee in range(num_epochs):
         loss.backward()
         # --- Gradient step --- #
         optimizer.step()
-        torch.cuda.empty_cache()  # Empty cache
         # --- Performance --- #
-        ii_loss = t2n(loss)+0
+        ii_loss = float(loss)
         ii_phat = sigmoid(t2n(logits))
+        torch.cuda.empty_cache()  # Empty cache
         ii_pred_act = np.zeros([nbatch, 2])
         for kk in range(nbatch):
             ii_pred_act[kk, 0] = ii_phat[kk].sum() / pfac
             ii_pred_act[kk, 1] = di_img_point[ids_batch[kk]]['lbls'].sum() / pfac
+            # print(ids_batch); print(ii_pred_act[kk])
         lst_ce.append(ii_loss)
         lst_pred_act.append(ii_pred_act)
-        print('Cross-entropy loss: %0.4f' % ii_loss)
+        lst_ids.append(ids_batch)
+        if (ii + 1) % 25 == 0:
+            print('-- batch %i of %i: %s --' % (ii+1, len(train_gen), ', '.join(ids_batch)))
+            print('Cross-entropy loss: %0.4f' % ii_loss)
     mat_pred_act = pd.DataFrame(np.vstack(lst_pred_act),columns=['pred','act'])
-    rho_train = metrics.r2_score(mat_pred_act.act, mat_pred_act.pred)
+    mat_pred_act.insert(0, 'ids', np.concatenate(lst_ids))
+    rho_train = r2_score(mat_pred_act.act, mat_pred_act.pred)
+    corr_train = np.corrcoef(mat_pred_act.act, mat_pred_act.pred)[0,1]
     ce_train = np.mean(lst_ce)
-    torch.cuda.empty_cache()  # Empty cache
+
+    #print(next(mdl.parameters()).device)
     # Evaluate model on validation data
-    mdl.eval()
     with torch.no_grad():
         for ids_batch, lbls_batch, imgs_batch in val_gen:
             logits = mdl(imgs_batch)
-            torch.cuda.empty_cache()  # Empty cache
             ii_phat = sigmoid(t2n(logits))
-            ce_val = t2n(criterion(input=logits,target=lbls_batch))+0
+            ce_val = float(criterion(input=logits,target=lbls_batch))
+            torch.cuda.empty_cache()  # Empty cache
             nbatch = len(ids_batch)
             ii_pred_act = np.zeros([nbatch,2])
             for kk in range(nbatch):
                 ii_pred_act[kk, 0] = ii_phat[kk].sum() / pfac
                 ii_pred_act[kk, 1] = di_img_point[ids_batch[kk]]['lbls'].sum() / pfac
-                print(ids_batch); print(ii_pred_act[kk])
+                #print(ids_batch); print(ii_pred_act[kk])
     val_pa = pd.DataFrame(ii_pred_act,columns=['pred','act'])
     val_pa.insert(0,'id',ids_batch)
-    rho_val = metrics.r2_score(val_pa.act, val_pa.pred)
-    print(np.round(val_pa,1))
-    torch.cuda.empty_cache()  # Empty cache
+    rho_val = r2_score(val_pa.act, val_pa.pred)
     # Print performance
-    print('Cross-entropy - training: %0.4f, validation: %0.4f'
+    print('Cross-entropy - training: %0.4f, validation: %0.4f\n'
           'R-squared - training: %0.3f, validation: %0.3f' %
           (ce_train, ce_val, rho_train, rho_val))
     mat_loss[ee] = [ce_train, ce_val, rho_train, rho_val]
     tdiff = time() - tnow
     print('Epoch took %i seconds, ETA: %i seconds' % (tdiff, (num_epochs-ee-1)*tdiff) )
     tnow = time()
-    # Save plots and network every X epochs
+    # Save plots and network every epoch_check epochs
     if (ee+1) % epoch_check == 0:
         print('------------ SAVING MODEL AT CHECKPOINT --------------')
         dir_ee = os.path.join(dir_datecell,'epoch_'+str(ee+1))
         if not os.path.exists(dir_ee):
             os.mkdir(dir_ee)
+
         with torch.no_grad():
             holder = []
             for ids_batch, lbls_batch, imgs_batch in eval_gen:
-                id = ids_batch[0]
-                print('Making image for: %s' % id)
-                logits = mdl(imgs_batch)
-                logits = logits.cpu().detach().numpy().sum(0).transpose(1,2,0)
-                torch.cuda.empty_cache()  # Empty cache
+                print('Making image for: %s' % ', '.join(ids_batch))
+                logits = t2n(mdl(imgs_batch))
+                logits = logits.transpose(2,3,1,0)
+                # logits = logits.sum(0)
+                torch.cuda.empty_cache() # Empty cache
                 phat = sigmoid(logits)
-                img = torch2array(imgs_batch).sum(3)
-                gaussian = di_img_point[id]['lbls'].copy()
+                img = torch2array(imgs_batch)#.sum(3)
+                gaussian = np.stack([di_img_point[ids]['lbls'].copy() for ids in ids_batch],3)
+                ids_seq = list(ids_batch)
+                pred_seq = phat.sum(0).sum(0).sum(0) / pfac
+                act_seq = gaussian.sum(0).sum(0).sum(0) / pfac
+                tmp = pd.DataFrame({'ids':ids_seq, 'pred':pred_seq, 'act':act_seq})
+                holder.append(tmp)
                 if isinstance(b0,float):
                     thresher = sigmoid(np.floor(np.array([b0])))
                 else:
                     thresher = sigmoid(np.floor(b0))
-                tt = 'train'
-                if id in idt_val:
-                    tt = 'valid'
-                comp_plt(arr=img,pts=phat,gt=gaussian,path=dir_ee,fn=tt+'_'+id+'.png',
-                         lbls=[', '.join(cells)], thresh=thresher)
-                holder.append([id, gaussian.sum() / pfac, phat.sum() / pfac])
-        df_ee = pd.DataFrame(holder,columns=['id','act','pred'])
-        df_ee['tt'] = np.where(df_ee.id.isin(idt_val), 'Validation', 'Training')
+                for j, ids in enumerate(ids_batch):
+                    tt = 'train'
+                    if ids in idt_val:
+                        tt = 'valid'
+                    # comp_plt(arr=img[:,:,:,j],pts=phat[:,:,:,j],gt=gaussian[:,:,:,j],
+                    #          path=dir_ee,fn=tt+'_'+ids+'.png',
+                    #          lbls=[', '.join(cells)], thresh=thresher)
+        df_ee = pd.concat(holder).reset_index(None, True).assign(tt=lambda x: np.where(x.ids.isin(idt_val), 'Validation', 'Training'))
+        print(df_ee.groupby('tt').apply(lambda x: r2_score(x.act, x.pred)))
         df_ee.to_csv(os.path.join(dir_ee,'df_'+str(ee+1)+'.csv'),index=False)
-        r2_ee = metrics.r2_score(df_ee.act, df_ee.pred)
+        r2_ee = r2_score(df_ee.act, df_ee.pred)
         # --- make figure --- #
-        plt.close()
-        g = sns.FacetGrid(df_ee,hue='tt',height=5,aspect=1.2)
-        g.map(plt.scatter,'pred','act')
-        g.set_xlabels('Predicted')
-        g.set_ylabels('Actual')
-        g.fig.suptitle('Estimed number of cells at epoch %i\nR-squared: %0.3f' % (ee + 1, r2_ee))
-        g.fig.subplots_adjust(top=0.85)
-        g.add_legend()
-        g._legend.set_title('')
-        for ax in g.axes.flatten():
-            xmx = int(max(max(ax.get_xlim()),max(ax.get_ylim())))+1
-            xmi = int(min(min(ax.get_xlim()),min(ax.get_ylim())))-1
-            ax.set_ylim((xmi, xmx))
-            ax.set_xlim((xmi, xmx))
-            ax.plot([xmi, xmx], [xmi, xmx], '--',c='black')
-        g.fig.savefig(os.path.join(dir_ee, 'cell_est.png'))
+        yl = [0, df_cells.num_cell.max() + 1]
+        tit = 'Estimed number of cells at epoch %i\nR-squared: %0.3f' % (ee + 1, r2_ee)
+        gg_scatter = (ggplot(df_ee,aes(x='pred',y='act',color='tt')) + theme_bw() +
+                      geom_point() + geom_abline(intercept=0,slope=1,color='blue') +
+                      scale_y_continuous(limits=yl) + scale_x_continuous(limits=yl) +
+                      ggtitle(tit) + labs(x='Predicted',y='Actual'))
+        gg_scatter.save(os.path.join(dir_ee, 'cell_est.png'))
         # ---- #
         torch.cuda.empty_cache()  # Empty cache
         # Save network
@@ -310,4 +318,29 @@ for ee in range(num_epochs):
 df_loss = pd.DataFrame(mat_loss,columns=['ce_train','ce_val','r2_train','r2_val'])
 df_loss.insert(0,'epoch',np.arange(num_epochs)+1)
 df_loss = df_loss[df_loss.ce_train != 0].reset_index(None,True)
-df_loss.to_csv(os.path.join(dir_cell,'mdl_performance.csv'),index=False)
+df_loss.to_csv(os.path.join(dir_datecell,'mdl_performance.csv'),index=False)
+# Make plots
+# df_loss = pd.read_csv(os.path.join(dir_datecell,'mdl_performance.csv'))
+df_loss = df_loss.melt('epoch',None,'tmp').assign(metric=lambda x: x.tmp.str.split('_',1,True).iloc[:,0],
+                                                  tt=lambda x: x.tmp.str.split('_',1,True).iloc[:,1])
+df_loss = df_loss.assign(metric=lambda x: x.metric.map({'ce':'Cross-entroy','r2':'R-squared'}),
+                 tt=lambda x: x.tt.map({'train':'Training','val':'Validation'})).drop(columns=['tmp'])
+# Get smoothed value
+tmp = df_loss.groupby(['metric','tt']).value.apply(lambda x:
+ x.rolling(window=10,center=True).mean().fillna(method='bfill').fillna(method='ffill'))
+df_loss.insert(df_loss.shape[1],'trend',tmp)
+# Find minumum value
+tmp = df_loss.assign(trend2=lambda x: np.where(x.metric=='R-squared',-x.trend,x.trend)).groupby(['metric','tt']).trend2.idxmin()
+df_best = df_loss.loc[tmp.values]
+df_best = df_best[df_best.tt=='Validation'].reset_index(None,True)
+
+# + geom_line(size=0.5)
+gg_loss = (ggplot(df_loss, aes(x='epoch',y='value',color='tt')) +
+           geom_point(size=0.5)  + theme_bw() +
+           ggtitle('Performance over epochs') +
+           facet_wrap('~metric',scales='free_y') +
+           theme(subplots_adjust={'wspace': 0.25}) +
+           geom_line(aes(x='epoch',y='trend',color='tt')) +
+           geom_vline(aes(xintercept='epoch'),data=df_best) +
+           geom_text(aes(x='epoch+10',y='trend',label='epoch'),data=df_best,inherit_aes=False))
+gg_loss.save(os.path.join(dir_datecell, 'performance_over_epochs.png'),width=9,height=5)
