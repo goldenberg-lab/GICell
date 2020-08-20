@@ -5,10 +5,13 @@ SCRIPT TO EVALUATE THE MODEL PERFORMANCE ACROSS DIFFERENT EPOCHS
 import os, pickle
 import numpy as np
 import pandas as pd
-from funs_support import makeifnot, sigmoid, val_plt
+from funs_support import makeifnot, sigmoid, val_plt, t2n
 import torch
-
-from funs_unet import UNet, find_bl_UNet
+from torchvision import transforms
+from torch.utils import data
+from sklearn.metrics import r2_score
+from funs_torch import randomRotate, randomFlip, CellCounterDataset, img2tensor
+from funs_unet import find_bl_UNet
 
 # import matplotlib
 # if not matplotlib.get_backend().lower() == 'agg':
@@ -73,9 +76,11 @@ dates = [dnew, dold]
 # Initialize two models
 fn_eosin_new, fn_inflam_new = tuple([os.path.join(dir_snapshot, 'mdl_'+cell+'_'+dnew+'.pt') for cell in cells])
 fn_eosin_old, fn_inflam_old = tuple([os.path.join(dir_snapshot, 'mdl_'+cell+'_'+dold+'.pt') for cell in cells])
-mdl_eosin_new, mdl_inflam_new = find_bl_UNet(fn_eosin_new, device), find_bl_UNet(fn_inflam_new, device)
-mdl_eosin_old, mdl_inflam_old = find_bl_UNet(fn_eosin_old, device), find_bl_UNet(fn_inflam_old, device)
-print([z for z in di_mdls['eosin']['2020_08_12'].down4.parameters()][0][10,10,1,1])
+mdl_eosin_new = find_bl_UNet(path=fn_eosin_new, device=device, batchnorm=True)
+mdl_inflam_new = find_bl_UNet(path=fn_inflam_new, device=device, batchnorm=True)
+mdl_eosin_old = find_bl_UNet(path=fn_eosin_old, device=device, batchnorm=True)
+mdl_inflam_old = find_bl_UNet(path=fn_inflam_old, device=device, batchnorm=True)
+
 # Load the data sources
 fn_dat_new, fn_dat_old = tuple([os.path.join(dir_snapshot, 'dat_star_'+date+'.csv') for date in dates])
 dat_star = pd.read_csv(os.path.join(dir_snapshot, fn_dat_new))
@@ -85,11 +90,28 @@ di_id = dict(zip(di_id.id, di_id.tt))
 idt_val = [k for k,q in di_id.items() if q == 'Validation']
 idt_train = [k for k,q in di_id.items() if q == 'Training']
 
+# Create Figure with the actual ratio
+df_best = dat_star.pivot_table(['act','pred'],['id','tt'],'cell').reset_index()
+df_best = df_best.melt(['id','tt']).rename(columns={None:'gt'}).pivot_table('value',['id','tt','gt'],'cell').reset_index()
+df_best = df_best.assign(ratio=lambda x: (x.eosin/x.inflam).fillna(0)).pivot_table('ratio',['id','tt'],'gt').reset_index()
+df_best = pd.concat([dat_star.drop(columns=['epoch']),df_best.assign(cell='ratio')])
+
+gg_best = (ggplot(df_best, aes(x='pred',y='act',color='tt')) + theme_bw() +
+           geom_point() + geom_abline(slope=1,intercept=0,linetype='--') +
+           facet_wrap('~cell',scales='free') + labs(x='Predicted',y='Actual') +
+           theme(legend_position='bottom',legend_box_spacing=0.3,
+                 subplots_adjust={'wspace': 0.1}) +
+           scale_color_discrete(name='Set'))
+gg_best.save(os.path.join(dir_save,'gg_scatter_best.png'),height=5,width=12)
+
 ###########################################################
 ## --- (2) EXAMINE PREDICTED PROBABILITIES ON IMAGE  --- ##
 
 # Loop over validation to make predicted/actual plots
 mdl_eosin_new.eval()
+mdl_inflam_new.eval()
+mdl_eosin_old.eval()
+mdl_inflam_old.eval()
 
 holder = []
 for idt in idt_val:
@@ -104,36 +126,41 @@ for idt in idt_val:
         phat_eosin = sigmoid(logits_eosin)
     pred_inflam, pred_eosin = phat_inflam.sum()/9, phat_eosin.sum()/9
     act_inflam, act_eosin = int(np.round(gt_inflam.sum()/9,0)), int(np.round(gt_eosin.sum()/9,0))
-    print('ID: %s -- pred inflam: %i (%i), eosin: %i (%i)' % (idt, pred_inflam, act_inflam, pred_eosin, act_eosin))
+    print('ID: %s -- pred inflam: %i (%i), eosin: %i (%i)' %
+          (idt, pred_inflam, act_inflam, pred_eosin, act_eosin))
     # Seperate eosin from inflam
     thresh_eosin, thresh_inflam = np.quantile(phat_eosin, 0.99), np.quantile(phat_inflam, 0.99)
     print('Threshold inflam: %0.5f, eosin: %0.5f' % (thresh_inflam, thresh_eosin))
     thresh_eosin, thresh_inflam = 0.01, 0.01
-    phat = np.dstack([phat_eosin, phat_inflam])
-    gt = np.dstack([gt_eosin, gt_inflam])
-    idx_cell_other = gt_inflam - gt_eosin > 0
+    idx_cell_inflam = gt_inflam > 0
     idx_cell_eosin = gt_eosin > 0
+    idx_cell_other = idx_cell_inflam & ~idx_cell_eosin
     idx_cell_nothing = gt_inflam == 0
-    idx_eosin = phat_eosin > thresh_eosin
-    num_other, num_eosin, num_null = idx_cell_other[idx_eosin].sum(), idx_cell_eosin[idx_eosin].sum(), idx_cell_nothing[idx_eosin].sum()
+    assert np.sum(idx_cell_inflam) == np.sum(idx_cell_eosin) + np.sum(idx_cell_other)
+    assert np.sum(idx_cell_inflam) + np.sum(idx_cell_nothing) == np.prod(img.shape[0:2])
+    idx_thresh_eosin = phat_eosin > thresh_eosin
+    num_other, num_eosin, num_null = idx_cell_other[idx_thresh_eosin].sum(), idx_cell_eosin[idx_thresh_eosin].sum(), idx_cell_nothing[idx_thresh_eosin].sum()
     tmp = pd.DataFrame({'idt':idt, 'other': num_other, 'eosin': num_eosin,
-                  'null': num_null, 'tot': np.sum(idx_eosin),
+                  'null': num_null, 'tot': np.sum(idx_thresh_eosin),
                   'pred':pred_eosin, 'act': act_eosin}, index=[0])
     holder.append(tmp)
+    gt = np.dstack([gt_eosin, gt_inflam])
+    phat = np.dstack([phat_eosin, phat_inflam])
     val_plt(img, phat, gt, lbls=['eosin', 'inflam'], path=dir_save,
              thresh=[thresh_eosin, thresh_inflam], fn=idt+'.png')
 # Find correlation between...
-df_inf = pd.concat(holder).reset_index(None, True).melt(['idt','pred','act','tot'],None, 'tt', 'n')
-df_inf = df_inf.merge(df_inf.groupby('idt').n.sum().reset_index().rename(columns={'n':'den'}),'left','idt')
-df_inf = df_inf.assign(ratio = lambda x: x.n / x.den).sort_values(['act','tt'])
-tmp = df_inf.assign(tt=lambda x: pd.Categorical(x.tt,['null','other','eosin']))
-tmp.act = pd.Categorical(tmp.act.astype(str),tmp.act.unique().astype(str))
+df_inf = pd.concat(holder).melt(['idt','pred','act','tot'],['other','eosin','null'],'cell','n').sort_values(['tot','idt']).reset_index(None, True)
+df_inf = df_inf.assign(ratio = lambda x: (x.n / x.tot).fillna(0))
+tmp = df_inf.assign(cell=lambda x: pd.Categorical(x.cell,['null','other','eosin']))
+tmp.act = pd.Categorical(tmp.act.astype(str),np.sort(tmp.act.unique()).astype(str))
 
-gg_inf = (ggplot(tmp, aes(x='act',y='ratio',fill='tt')) + theme_bw() +
-          geom_bar(stat='identity') + ggtitle('Distribution of points > threshold') +
-          labs(y='Percent', x='# of actual eosinophils') +
-          scale_fill_discrete(name='Cell type',labels=['Empty','Other Inflam','Eosin']))
-gg_inf.save(os.path.join(dir_save,'inf_fp_ratio.png'))
+di_cell = dict(zip(['null','other','eosin'],['Empty','Other Inflam','Eosin']))
+gg_inf = (ggplot(tmp, aes(x='act',y='ratio',color='cell')) + theme_bw() +
+          geom_jitter() + facet_wrap('~cell', labeller=labeller(cell=di_cell)) +
+          ggtitle('Distribution of points > threshold') +
+          labs(y='Percent', x='# of actual eosinophils'))
+# scale_color_discrete(name='Cell type',labels=list(di_cell.values()))
+gg_inf.save(os.path.join(dir_save,'inf_fp_ratio.png'),width=10,height=5)
 
 #############################################
 ## --- (3) COMPARE TO PREVIOUS MODELS  --- ##
@@ -165,4 +192,70 @@ for ii, idt in enumerate(idt_val):
     assert phat.shape == gt.shape
     thresholds = list(np.repeat(0.01, len(lbls)))
     val_plt(img, phat, gt, lbls=lbls, path=dir_save, thresh=thresholds, fn='comp_' + idt+'.png')
+
+####################################
+## --- (4) RANDOM CROPS/FLIPS --- ##
+
+# Get the "actual" cell counts
+df_actcell = dat_star.pivot_table('act',['id','tt'],'cell').astype(int).reset_index()
+
+# Create datasetloader class
+params = {'batch_size': 1, 'shuffle': False}
+
+k_seq_rotate = [0, 1, 2, 3]
+k_seq_flip = [0, 1, 2]
+
+store = []
+for kr in k_seq_rotate:
+    for kf in k_seq_flip:
+        print('Rotation: %i, Flip: %i' % (kr, kf))
+        transformer  = transforms.Compose([randomRotate(fix_k=True, k=kr), randomFlip(fix_k=True,k=kf), img2tensor(device)])
+        dataset = CellCounterDataset(di=di_img_point, ids=list(di_id), transform=transformer, multiclass=False)
+        generator = data.DataLoader(dataset=dataset, **params)
+        holder = []
+        with torch.no_grad():
+            for ids_batch, lbls_batch, imgs_batch in generator:
+                # Get predictions
+                phat_eosin = sigmoid(t2n(mdl_eosin_new(imgs_batch)))
+                phat_inflam = sigmoid(t2n(mdl_inflam_new(imgs_batch)))
+                num_eosin, num_inflam = phat_eosin.sum(), phat_inflam.sum()
+                tmp = pd.DataFrame({'ids':ids_batch,'eosin':num_eosin,'inflam':num_inflam},index=[0])
+                holder.append(tmp)
+                # Empty cache
+                del lbls_batch, imgs_batch
+                torch.cuda.empty_cache()
+        tmp = pd.concat(holder).assign(rotate=kr, flip=kf)
+        store.append(tmp)
+
+# Compare
+dat_flip = pd.concat(store).reset_index(None,True)
+dat_flip[['eosin','inflam']] = dat_flip[['eosin','inflam']] / 9  # Normalize by pfac
+tmp1 = dat_flip.melt(['ids','rotate','flip'],None,'cell','pred')
+tmp2 = df_actcell.rename(columns={'id':'ids'}).melt(['ids','tt'],None,'cell','act')
+dat_flip = tmp1.merge(tmp2,'left',['ids','cell'])
+
+r2_flip = dat_flip.groupby(['tt','rotate','flip']).apply(lambda x: r2_score(x.act, x.pred)).reset_index().rename(columns={0:'r2'}).assign(rf=lambda x: 'r='+x.rotate.astype(str)+', f='+x.flip.astype(str))
+
+gg_r2flip = (ggplot(r2_flip,aes(x='rf',y='r2',color='tt',group='tt')) +
+             theme_bw() + geom_point() + geom_line() +
+             labs(y='R-squared') +
+             theme(axis_title_x=element_blank(), axis_text_x=element_text(angle=90)) +
+             scale_color_discrete(name='Rotate') +
+             ggtitle('Variation in R2 over flips'))
+gg_r2flip.save(os.path.join(dir_save,'r2flip.png'), width=6, height=6)
+
+# CV over ID
+cv_flip = dat_flip.groupby(['ids','tt','cell']).pred.apply(lambda x: pd.Series({'mu':x.mean(), 'se':x.std()})).reset_index()
+cv_flip = cv_flip.pivot_table('pred',['ids','tt','cell'],'level_3').reset_index().assign(cv=lambda x: x.se/x.mu)
+
+gg_cv = (ggplot(cv_flip, aes(x='cv',fill='tt')) + theme_bw() +
+         geom_density(alpha=0.5) + facet_wrap('~cell') +
+         labs(x='CV') + ggtitle('Coefficient of Variation over flip'))
+gg_cv.save(os.path.join(dir_save,'cv_flip.png'), width=6, height=6)
+
+gg_cv = (ggplot(cv_flip, aes(x='mu',y='cv',color='tt')) + theme_bw() +
+         geom_point() + facet_wrap('~cell',scales='free_x') +
+         theme(subplots_adjust={'wspace': 0.25}) +
+         labs(x='Mean prediction',y='CV') + ggtitle('Coefficient of Variation against average level'))
+gg_cv.save(os.path.join(dir_save,'cv_mu.png'), width=8, height=6)
 
