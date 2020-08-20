@@ -49,12 +49,17 @@ class img2tensor(object):
         return imgs, lbls
 
 class randomRotate(object):
-    def __init__(self, tol=1e-4):
+    def __init__(self, tol=1e-4, fix_k=False, k=0):
         self.tol = tol
+        self.fix_k = fix_k
+        self.k = k
 
     def __call__(self, imgs_lbls):
         imgs, lbls = imgs_lbls[0], imgs_lbls[1]
-        k = np.random.randint(4)  # Number of rotations, k==0 is fixed
+        if self.fix_k:
+            k = self.k
+        else:
+            k = np.random.randint(4)  # Number of rotations, k==0 is fixed
         angle = k * 90
         # print('Angle: %i' % angle)
         if angle > 0:
@@ -64,8 +69,15 @@ class randomRotate(object):
         return [imgs, lbls]
 
 class randomFlip(object):
+    def __init__(self, fix_k=False, k=0):
+        self.fix_k = fix_k
+        self.k = k
+
     def __call__(self, imgs_lbls):
-        k = np.random.randint(3)  # flip: 0 (none), 1 (left-right), 2 (up-down)
+        if self.fix_k:
+            k = self.k
+        else:
+            k = np.random.randint(3)  # flip: 0 (none), 1 (left-right), 2 (up-down)
         # print('Flip: %i' % k)
         if k == 0:
             return imgs_lbls
