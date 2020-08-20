@@ -21,7 +21,7 @@ epoch_check = args.epoch_check
 # cells = ['eosinophil']
 # learning_rate, num_params = 0.005, 32
 # num_epochs, epoch_check, batch_size = 15, 15, 1
-# valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
+valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
 assert all([z in valid_cells for z in cells])
 
 print('Cells: %s\nnum_epochs: %i\nbatch_size: %i\nlearning_rate: %0.3f, num_params: %i' % (', '.join(cells), num_epochs, batch_size, learning_rate, num_params))
