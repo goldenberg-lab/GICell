@@ -13,6 +13,10 @@ import seaborn as sns
 
 from colorspace.colorlib import HCL
 
+def cvec(z):
+    return np.atleast_2d(z).T
+
+
 def gg_color_hue(n):
     hues = np.linspace(15, 375, num=n + 1)[:n]
     hcl = []
