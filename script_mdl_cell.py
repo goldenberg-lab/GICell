@@ -121,7 +121,7 @@ print(df_cells)
 
 # Load the model
 torch.manual_seed(1234)
-mdl = UNet(n_channels=3, n_classes=1, bl=num_params)
+mdl = UNet(n_channels=3, n_classes=1, bl=num_params, batchnorm=True)
 mdl.to(device)
 # mdl.load_state_dict(torch.load(os.path.join(dir_ee,'mdl_1000.pt')))
 with torch.no_grad():
@@ -333,3 +333,7 @@ gg_loss = (ggplot(df_loss, aes(x='epoch',y='val',color='batch')) +
            geom_vline(aes(xintercept='epoch'),data=df_best) +
            geom_text(aes(x='epoch+1',y='trend',label='epoch'),data=df_best,inherit_aes=False))
 gg_loss.save(os.path.join(dir_datecell, 'performance_over_epochs.png'),width=12,height=6)
+
+#qq = df_loss[(df_loss.tt=='Training') & (df_loss.metric=='r2')].pivot('epoch','batch','val').reset_index()
+#print(qq)
+#df_loss[(df_loss.tt=='Validation') & (df_loss.metric=='r2')]
