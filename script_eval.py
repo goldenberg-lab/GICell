@@ -78,9 +78,6 @@ for fold in di_fold:
             print('Epoch %i does not exist for %s' % (ee, fold))
     tmp_cell = pd.concat(holder).reset_index(None, True)
     holder_cell.append(tmp_cell)
-    # # Load the train/val performance
-    # tmp_perf = pd.read_csv(os.path.join(fold_cell, 'mdl_performance.csv')).assign(cell = di_fold[fold])
-    # holder_perf.append(tmp_perf)
 
 # Eosinophil ratio
 df_cell = pd.concat(holder_cell).reset_index(None, True)  #[df_cell.epoch == vec_epochs.min()]

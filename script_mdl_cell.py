@@ -19,8 +19,8 @@ epoch_check = args.epoch_check
 
 # # for beta testing
 # cells = ['eosinophil']
-# learning_rate, num_params = 0.005, 32
-# num_epochs, epoch_check, batch_size = 15, 15, 1
+# learning_rate, num_params = 0.005, 16
+# num_epochs, epoch_check, batch_size = 15, 15, 6
 valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
 assert all([z in valid_cells for z in cells])
 
@@ -299,6 +299,7 @@ for ee in range(num_epochs):
 
     if (ee + 1) % epoch_check == 0:
         print('------------ SAVING MODEL AT CHECKPOINT --------------')
+        df_eval.to_csv(os.path.join(dir_ee,'df_'+str(ee+1)+'.csv'),index=False)
         torch.save(mdl.state_dict(), os.path.join(dir_ee,'mdl_'+str(ee+1)+'.pt'))
         yl = [0, df_cells.num_cell.max() + 1]
         tit = 'Estimed number of cells at epoch %i' % (ee + 1)
