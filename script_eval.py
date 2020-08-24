@@ -6,7 +6,7 @@ import os
 import shutil
 import numpy as np
 import pandas as pd
-from funs_support import ljoin, makeifnot, jackknife_metric, norm_mse, gg_color_hue
+from funs_support import ljoin, makeifnot, jackknife_metric, norm_mse, gg_color_hue, bootstrap_metric
 import torch
 
 from sklearn.metrics import r2_score
@@ -80,7 +80,7 @@ for fold in di_fold:
     holder_cell.append(tmp_cell)
 
 # Eosinophil ratio
-df_cell = pd.concat(holder_cell).reset_index(None, True)  #[df_cell.epoch == vec_epochs.min()]
+df_cell = pd.concat(holder_cell).reset_index(None, True).rename(columns={'ids':'id'}).drop(columns=['ce'])
 dat_act = df_cell.groupby(['id','cell']).act.mean().reset_index().assign(act = lambda x: x.act.astype(int))
 dat_act = dat_act.pivot('id','cell','act').reset_index().assign(ratio = lambda x: x.eosin / x.inflam).fillna(0)
 di_id = df_cell.groupby(['id', 'tt']).size().reset_index().drop(columns=[0])
@@ -109,8 +109,9 @@ df_rawcell = tmp3.pivot_table('value',['id','tt','cell']+cn_epoch,'lbl').reset_i
 df_ratiocell = pd.concat([df_ratio, df_rawcell],0).reset_index(None,True)
 
 ### PERFORMANCE FOR CELL/RATIO
+np.random.seed(1234)
 dat_metric_ratio = df_ratiocell.groupby(cn_epoch + ['tt','cell']).apply(lambda x:
-             pd.Series({'mu_r2':r2_score(x.act, x.pred), 'ci_r2':jackknife_metric(x.act, x.pred,r2_score),'mu_mse':norm_mse(x.act, x.pred),'ci_mse':jackknife_metric(x.act, x.pred,norm_mse)})).reset_index()
+             pd.Series({'mu_r2':r2_score(x.act, x.pred), 'ci_r2':bootstrap_metric(x.act, x.pred,r2_score),'mu_mse':norm_mse(x.act, x.pred),'ci_mse':bootstrap_metric(x.act, x.pred,norm_mse)})).reset_index()
 dat_metric_ratio = dat_metric_ratio.melt(cn_epoch+['tt','cell'],None,'tmp').assign(moment=lambda x: x.tmp.str.split('_',1,True).iloc[:,0], metric=lambda x: x.tmp.str.split('_',1,True).iloc[:,1]).drop(columns=['tmp'])
 dat_metric_ratio = dat_metric_ratio.pivot_table('value',cn_epoch+['tt','cell','metric'],'moment',lambda x: x).reset_index()
 dat_metric_ratio = pd.concat([dat_metric_ratio.drop(columns=['ci']), pd.DataFrame(np.vstack(dat_metric_ratio.ci),columns=['lb','ub'])],1)
@@ -151,13 +152,19 @@ shutil.copy(os.path.join(dir_inflam, 'mdl_'+str(epoch_inflam)+'.pt'), os.path.jo
 ### PREDICATED VS ACTUAL FOR EOSIN/INFLAM/RATIO
 
 df_best = df_ratiocell[(df_ratiocell.epoch_eosin==epoch_eosin) & ((df_ratiocell.epoch_inflam==epoch_inflam))].reset_index(None,True).drop(columns=cn_epoch)
+dat_r2_best = dat_r2[(dat_r2.epoch_eosin==epoch_eosin) & ((dat_r2.epoch_inflam==epoch_inflam))].reset_index(None,True).drop(columns=cn_epoch)
+tmp = pd.DataFrame({'tt':np.repeat(['Training','Validation'],3),'cell':np.tile(['eosin','inflam','ratio'],2), 'x':np.tile([20,100,0.15],2),'y':[45,210,0.65,50,225,0.75]})
+dat_r2_best = dat_r2_best.merge(tmp).assign(lbl=lambda x: x.mu.round(2).astype(str)+' ('+x.lb.round(2).astype(str) + ' - ' + x.ub.round(2).astype(str)+')')
 
 gg_best = (ggplot(df_best, aes(x='pred',y='act',color='tt')) + theme_bw() +
            geom_point() + geom_abline(slope=1,intercept=0,linetype='--') +
            facet_wrap('~cell',scales='free') + labs(x='Predicted',y='Actual') +
-           theme(legend_position='bottom',panel_spacing=0.5,legend_box_spacing=0.3) +
-           scale_color_discrete(name=' '))
-gg_best.save(os.path.join(dir_figures,'gg_scatter_best.png'),height=5,width=10)
+           theme(legend_position='bottom',subplots_adjust={'wspace': 0.25},legend_box_spacing=0.3) +
+           scale_color_discrete(name=' ') +
+           geom_text(aes(x='x',y='y',color='tt',label='lbl'),data=dat_r2_best) +
+           ggtitle('Predicated vs Actual for cell types and ratio\nText shows R2 with 95% CI'))
+gg_best.save(os.path.join(dir_figures,'gg_scatter_best.png'),height=5.5,width=12)
+
 
 ### SCATTER BETWEEN PREDICTED EOSIN/INFLAM
 

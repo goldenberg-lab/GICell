@@ -96,13 +96,13 @@ df_best = df_best.melt(['id','tt']).rename(columns={None:'gt'}).pivot_table('val
 df_best = df_best.assign(ratio=lambda x: (x.eosin/x.inflam).fillna(0)).pivot_table('ratio',['id','tt'],'gt').reset_index()
 df_best = pd.concat([dat_star.drop(columns=['epoch']),df_best.assign(cell='ratio')])
 
-gg_best = (ggplot(df_best, aes(x='pred',y='act',color='tt')) + theme_bw() +
-           geom_point() + geom_abline(slope=1,intercept=0,linetype='--') +
-           facet_wrap('~cell',scales='free') + labs(x='Predicted',y='Actual') +
-           theme(legend_position='bottom',legend_box_spacing=0.3,
-                 subplots_adjust={'wspace': 0.1}) +
-           scale_color_discrete(name='Set'))
-gg_best.save(os.path.join(dir_save,'gg_scatter_best.png'),height=5,width=12)
+# gg_best = (ggplot(df_best, aes(x='pred',y='act',color='tt')) + theme_bw() +
+#            geom_point() + geom_abline(slope=1,intercept=0,linetype='--') +
+#            facet_wrap('~cell',scales='free') + labs(x='Predicted',y='Actual') +
+#            theme(legend_position='bottom',legend_box_spacing=0.3,
+#                  subplots_adjust={'wspace': 0.1}) +
+#            scale_color_discrete(name='Set'))
+# gg_best.save(os.path.join(dir_save,'gg_scatter_best.png'),height=5,width=12)
 
 ###########################################################
 ## --- (2) EXAMINE PREDICTED PROBABILITIES ON IMAGE  --- ##
@@ -228,21 +228,22 @@ for kr in k_seq_rotate:
         store.append(tmp)
 
 # Compare
-dat_flip = pd.concat(store).reset_index(None,True)
-dat_flip[['eosin','inflam']] = dat_flip[['eosin','inflam']] / 9  # Normalize by pfac
+cells = ['eosin','inflam','ratio']
+dat_flip = pd.concat(store).reset_index(None,True).assign(ratio=lambda x: x.eosin/(x.eosin+x.inflam))
+dat_flip[cells[0:2]] = dat_flip[cells[0:2]] / 9  # Normalize by pfac
 tmp1 = dat_flip.melt(['ids','rotate','flip'],None,'cell','pred')
-tmp2 = df_actcell.rename(columns={'id':'ids'}).melt(['ids','tt'],None,'cell','act')
-dat_flip = tmp1.merge(tmp2,'left',['ids','cell'])
+tmp2 = df_actcell.assign(ratio=lambda x: x.eosin/(x.eosin+x.inflam)).rename(columns={'id':'ids'}).melt(['ids','tt'],None,'cell','act')
+dat_flip = tmp1.merge(tmp2,'left',['ids','cell']).assign(act=lambda x: x.act.fillna(0))
 
-r2_flip = dat_flip.groupby(['tt','rotate','flip']).apply(lambda x: r2_score(x.act, x.pred)).reset_index().rename(columns={0:'r2'}).assign(rf=lambda x: 'r='+x.rotate.astype(str)+', f='+x.flip.astype(str))
+r2_flip = dat_flip.groupby(['tt','rotate','flip','cell']).apply(lambda x: r2_score(x.act, x.pred)).reset_index().rename(columns={0:'r2'}).assign(rf=lambda x: 'r='+x.rotate.astype(str)+', f='+x.flip.astype(str))
 
 gg_r2flip = (ggplot(r2_flip,aes(x='rf',y='r2',color='tt',group='tt')) +
              theme_bw() + geom_point() + geom_line() +
-             labs(y='R-squared') +
+             labs(y='R-squared') + facet_wrap('~cell') +
              theme(axis_title_x=element_blank(), axis_text_x=element_text(angle=90)) +
              scale_color_discrete(name='Rotate') +
              ggtitle('Variation in R2 over flips'))
-gg_r2flip.save(os.path.join(dir_save,'r2flip.png'), width=6, height=6)
+gg_r2flip.save(os.path.join(dir_save,'r2flip.png'), width=12, height=6)
 
 # CV over ID
 cv_flip = dat_flip.groupby(['ids','tt','cell']).pred.apply(lambda x: pd.Series({'mu':x.mean(), 'se':x.std()})).reset_index()
@@ -256,6 +257,6 @@ gg_cv.save(os.path.join(dir_save,'cv_flip.png'), width=6, height=6)
 gg_cv = (ggplot(cv_flip, aes(x='mu',y='cv',color='tt')) + theme_bw() +
          geom_point() + facet_wrap('~cell',scales='free_x') +
          theme(subplots_adjust={'wspace': 0.25}) +
-         labs(x='Mean prediction',y='CV') + ggtitle('Coefficient of Variation against average level'))
+         labs(x='Mean prediction',y='CV') + ggtitle('Coefficient of Variation from Random Flips/Rotations'))
 gg_cv.save(os.path.join(dir_save,'cv_mu.png'), width=8, height=6)
 

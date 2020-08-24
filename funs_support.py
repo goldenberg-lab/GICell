@@ -4,6 +4,9 @@ import numpy as np
 from zipfile import ZipFile
 from scipy.ndimage import gaussian_filter
 from sklearn.metrics import mean_squared_error as mse
+from sklearn.metrics import r2_score
+
+from arch.bootstrap import IIDBootstrap
 
 import matplotlib
 
@@ -80,6 +83,10 @@ def ljoin(x):
 def stopifnot(cond):
     if not cond:
         sys.exit('error!')
+
+def bootstrap_metric(act, pred, metric, nbs=999):
+    ci = IIDBootstrap(act, pred).conf_int(metric, reps=nbs, method='bca', size=0.95, tail='two').flatten()
+    return ci[0], ci[1]
 
 def jackknife_metric(act, pred, metric):
     assert len(act) == len(pred)
