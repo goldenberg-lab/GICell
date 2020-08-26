@@ -19,6 +19,7 @@ from funs_unet import find_bl_UNet
 # from matplotlib import pyplot as plt
 # import seaborn as sns
 
+import cv2
 from plotnine import *
 
 use_cuda = torch.cuda.is_available()
@@ -112,6 +113,7 @@ mdl_eosin_new.eval()
 mdl_inflam_new.eval()
 mdl_eosin_old.eval()
 mdl_inflam_old.eval()
+torch.cuda.empty_cache()
 
 holder = []
 for idt in idt_val:
@@ -259,4 +261,103 @@ gg_cv = (ggplot(cv_flip, aes(x='mu',y='cv',color='tt')) + theme_bw() +
          theme(subplots_adjust={'wspace': 0.25}) +
          labs(x='Mean prediction',y='CV') + ggtitle('Coefficient of Variation from Random Flips/Rotations'))
 gg_cv.save(os.path.join(dir_save,'cv_mu.png'), width=8, height=6)
+
+#########################################
+## --- (5) COMPARE TO ENTIRE IMAGE --- ##
+
+dir_GI = os.path.join(dir_base,'..','..','data')
+dir_cleaned = os.path.join(dir_GI, 'cleaned')
+
+k1 = 2000
+k2 = int(k1 / 2)
+# with torch.no_grad():
+#     print(mdl_eosin_new(torch.rand(1,3,kk,kk).to(device)))
+#     torch.cuda.empty_cache()
+
+di_desc = {'25%':'lb','50%':'med','75%':'ub'}
+
+cn_keep = ['ID','tissue','file']
+cn_nancy = ['CII','AIC']
+cn_robarts = ['CII','LPN','NIE']
+dat_nancy = pd.read_csv(os.path.join(dir_GI, 'df_lbls_nancy.csv'),usecols=cn_keep+cn_nancy)
+dat_robarts = pd.read_csv(os.path.join(dir_GI, 'df_lbls_robarts.csv'),usecols=cn_keep+cn_robarts)
+tmp_nancy = dat_nancy.melt('file',cn_nancy,'metric').assign(value=lambda x: np.where(x.value > 3, 2, x.value.fillna(0)).astype(int), tt='nancy')
+tmp_robarts = dat_robarts.melt('file',cn_robarts,'metric').assign(value=lambda x: np.where(x.value > 3, 2, x.value.fillna(0)).astype(int), tt='robarts')
+dat_NR = pd.concat([tmp_nancy, tmp_robarts]).reset_index(None,True)
+dat_IDs = dat_nancy[['ID','tissue','file']]
+del dat_nancy, dat_robarts
+
+# Get unique file IDs
+mat_num = np.zeros([dat_IDs.shape[0],2])
+for ii, rr in dat_IDs.iterrows():
+    print('Image %i of %i' % (ii+1, dat_IDs.shape[0]))
+    idt, tissue, file = rr['ID'], rr['tissue'], rr['file']
+    # Load the image
+    path = os.path.join(dir_cleaned,idt, file)
+    assert os.path.exists(path)
+    img = cv2.imread(path, cv2.IMREAD_COLOR)
+    height, width, channels = img.shape
+    # Center of image
+    i, j = int(np.floor(height / 2)), int(np.floor(width / 2))
+    im, ix, jm, jx = 0, k1, 0, k1
+    if height > k1:
+        im, ix = i - 1000, i + 1000
+    if width > k1:
+        jm, jx = j - 1000, j + 1000
+    print('im: %i, ix: %i, jm: %i, jx: %i' % (im, ix, jm, jx))
+    img = img[max(0, i - k2):min(height, i + k2), max(0, j - k2):min(width, j + k2)]
+    img = img.reshape(tuple(list(img.shape) + [1])).transpose([3,2,1,0])
+    # Convert to GPU tensor
+    img = torch.tensor(img / 255, dtype=torch.float32).to(device)
+    with torch.no_grad():
+        phat_eosin = sigmoid(t2n(mdl_eosin_new(img)))
+        torch.cuda.empty_cache()
+        phat_inflam = sigmoid(t2n(mdl_inflam_new(img)))
+        torch.cuda.empty_cache()
+    num_eosin = phat_eosin.sum(0).sum(0).sum(0).sum(0)
+    num_inflam = phat_inflam.sum(0).sum(0).sum(0).sum(0)
+    mat_num[ii] = [num_eosin, num_inflam]
+# Merge and save
+dat_num = pd.DataFrame(mat_num, columns=['eosin','inflam'])
+dat_num = dat_num.assign(ratio=lambda x: x.eosin / (x.eosin + x.inflam))
+dat_num = pd.concat([dat_IDs, dat_num],1)
+dat_num.to_csv(os.path.join(dir_output, 'dat_cellcount.csv'),index=False)
+# Merge
+dat_NR = dat_NR.merge(dat_num[['file','ratio']])
+dat_NR.to_csv(os.path.join(dir_output, 'dat_nancyrobarts.csv'),index=False)
+
+# To statistical inference
+# nr_long = dat_NR.melt(['ID','tissue','ratio'],['nancy','robarts'],'metric')
+nr_desc = dat_NR.groupby(['metric','tt','value']).ratio.describe()[di_desc].rename(columns=di_desc).reset_index()
+
+tit = 'Distribution of eosinophilic ratio to Nancy/Robarts score'
+gg_nr = (ggplot(dat_NR, aes(x='value', y='ratio')) +
+         theme_bw() + ggtitle(tit) +
+         geom_jitter(size=0.5,alpha=0.5,random_state=1,width=0.05,height=0,color='blue') +
+         labs(x='Score level', y='Eosinophil ratio') +
+         facet_wrap('~tt+metric') +
+         geom_point(aes(y='med'),data=nr_desc,size=2,color='black') +
+         geom_linerange(aes(x='value',ymin='lb',ymax='ub'),color='black',size=1,data=nr_desc,inherit_aes=False))
+
+gg_nr.save(os.path.join(dir_figures,'nancyrobart_ratio.png'),height=5,width=12)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

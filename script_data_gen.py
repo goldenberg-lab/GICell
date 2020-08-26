@@ -61,6 +61,9 @@ for ii, fn in enumerate(fn_points):
     di_img_point[idt]['lbls'] = lbls.copy()
     err = np.round(np.abs(np.sum(lbls) / fillfac ** 2 - idx_xy.shape[0]), 1)
     assert err <= 1.0
+    # from funs_support import comp_plt, val_plt
+    # val_plt(arr=di_img_point[idt]['img'], pts=lbls[:,:,[0,2]],lbls=['a','b'],
+    #          gt=lbls[:,:,[0,2]],path='..',thresh=[0.0,0.0],fn='blur.png')
 
 print(len(di_img_point))
 assert all([di_img_point[z]['img'].shape[0]>0 for z in di_img_point])
