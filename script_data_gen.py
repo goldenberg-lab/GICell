@@ -1,7 +1,8 @@
 ###############################
 ## --- (0) PRELIMINARIES --- ##
 
-import os, pickle, re
+import os
+import pickle
 import numpy as np
 import pandas as pd
 from PIL import Image
