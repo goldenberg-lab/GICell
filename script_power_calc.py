@@ -37,39 +37,40 @@ print(r2_score(y, x))
 #################################
 # --- (1) NATURAL VARIATION --- #
 
-# nsim = 10000
-# p_seq = np.arange(0.05,1,0.05)
-# r2_seq = np.arange(0.3,0.51,0.01)
-# n_seq = np.arange(8, 94+1, 1)
-# df_params = pd.DataFrame(list(itertools.product(r2_seq, n_seq)),columns=['r2','n'])
-# nparams = df_params.shape[0]
-#
-# stime = time()
-# store = []
-# for ii, rr in df_params.iterrows():
-#     print('iteration %i of %i' % (ii+1, nparams))
-#     r2, n = rr['r2'], int(rr['n'])
-#     holder = np.zeros(nsim)
-#     np.random.seed(ii)
-#     for jj in range(nsim):
-#         if (jj + 1) % 2500 == 0:
-#             print('Simulation %i of %i' % (jj+1, nsim))
-#         x, y = dgp_r2(n=n, r2=r2)
-#         holder[jj] = r2_score(y, x)
-#         r2_score(y, x)
-#     tmp = pd.DataFrame({'qq':np.quantile(holder, p_seq),'pp':p_seq, 'n':n, 'r2':r2})
-#     store.append(tmp)
-#     rate, nleft = (ii+1)/(time() - stime), nparams-(ii+1)
-#     print('eta: %i seconds' % (nleft / rate))
-# # Save
-# sim_val = pd.concat(store).reset_index(None,True)
-# sim_val.to_csv(os.path.join(dir_output,'simval.csv'), index=False)
+nsim = 10000
+p_seq = np.arange(0.05,1,0.05)
+r2_seq = [0.5] #np.arange(0.3,0.51,0.01)
+n_seq = [400] #np.arange(8, 94+1, 1)
+df_params = pd.DataFrame(list(itertools.product(r2_seq, n_seq)),columns=['r2','n'])
+nparams = df_params.shape[0]
+
+stime = time()
+store = []
+for ii, rr in df_params.iterrows():
+    print('iteration %i of %i' % (ii+1, nparams))
+    r2, n = rr['r2'], int(rr['n'])
+    holder = np.zeros(nsim)
+    np.random.seed(ii)
+    for jj in range(nsim):
+        if (jj + 1) % 2500 == 0:
+            print('Simulation %i of %i' % (jj+1, nsim))
+        x, y = dgp_r2(n=n, r2=r2)
+        holder[jj] = r2_score(y, x)
+        r2_score(y, x)
+    tmp = pd.DataFrame({'qq':np.quantile(holder, p_seq),'pp':p_seq, 'n':n, 'r2':r2})
+    store.append(tmp)
+    rate, nleft = (ii+1)/(time() - stime), nparams-(ii+1)
+    print('eta: %i seconds' % (nleft / rate))
+# Save
+sim_val = pd.concat(store).reset_index(None,True)
+sim_val.to_csv(os.path.join(dir_output,'simval.csv'), index=False)
 sim_val = pd.read_csv(os.path.join(dir_output,'simval.csv'))
 sim_val = sim_val.assign(pp=lambda x: x.pp.round(2).astype(str),
                          r2=lambda x: x.r2.round(2).astype(str))
 sim_val = sim_val.pivot_table('qq',['n','r2'],'pp')
 sim_val.columns = 'p'+sim_val.columns
 sim_val.reset_index(inplace=True)
+print(sim_val)
 
 # tmp = sim_val.melt(['n','r2'],['p0.25','p0.5','p0.75'])
 # gg_simval = (ggplot(tmp, aes(x='n',y='r2',fill='value')) + theme_bw() +
@@ -102,34 +103,36 @@ gg_simlenr2.save(os.path.join(dir_figures,'gg_simlenr2.png'),height=5,width=8)
 ####################################
 # --- (2) CONFIDENCE INTERVALS --- #
 
-# nsim = 1000
-# nbs = 249
-# r2_seq = np.arange(0.3,0.51,0.01)
-# n_seq = np.arange(8, 33, 1)
-# df_params = pd.DataFrame(list(itertools.product(r2_seq, n_seq)),columns=['r2','n'])
-# nparams = df_params.shape[0]
-#
-# stime = time()
-# store = []
-# for ii, rr in df_params.iterrows():
-#     print('iteration %i of %i' % (ii+1, nparams))
-#     r2, n = rr['r2'], int(rr['n'])
-#     holder = np.zeros([nsim, 3])
-#     np.random.seed(ii)
-#     for jj in range(nsim):
-#         if (jj + 1) % 50 == 0:
-#             print('Simulation %i of %i' % (jj+1, nsim))
-#         x, y = dgp_r2(n=n, r2=r2)
-#         ci = IIDBootstrap(y, x).conf_int(r2_score, reps=nbs, method='bca', size=0.95, tail='two').flatten()
-#         holder[jj] = np.append(r2_score(y, x), ci)
-#     tmp = pd.DataFrame(holder, columns=['mu', 'lb', 'ub']).assign(r2=r2, n=n)
-#     store.append(tmp)
-#     rate, nleft = (ii+1)/(time() - stime), nparams-(ii+1)
-#     print('eta: %i seconds' % (nleft / rate))
-# # Save for later
-# sim_store = pd.concat(store).reset_index(None,True)
-# sim_store.to_csv(os.path.join(dir_output,'powersim.csv'), index=False)
-sim_store = pd.read_csv(os.path.join(dir_output,'powersim.csv'))
+if 'powersim.csv' not in os.listdir(dir_output):
+    nsim = 1000
+    nbs = 249
+    r2_seq = np.arange(0.3,0.51,0.01)
+    n_seq = np.arange(8, 33, 1)
+    df_params = pd.DataFrame(list(itertools.product(r2_seq, n_seq)),columns=['r2','n'])
+    nparams = df_params.shape[0]
+
+    stime = time()
+    store = []
+    for ii, rr in df_params.iterrows():
+        print('iteration %i of %i' % (ii+1, nparams))
+        r2, n = rr['r2'], int(rr['n'])
+        holder = np.zeros([nsim, 3])
+        np.random.seed(ii)
+        for jj in range(nsim):
+            if (jj + 1) % 50 == 0:
+                print('Simulation %i of %i' % (jj+1, nsim))
+            x, y = dgp_r2(n=n, r2=r2)
+            ci = IIDBootstrap(y, x).conf_int(r2_score, reps=nbs, method='bca', size=0.95, tail='two').flatten()
+            holder[jj] = np.append(r2_score(y, x), ci)
+        tmp = pd.DataFrame(holder, columns=['mu', 'lb', 'ub']).assign(r2=r2, n=n)
+        store.append(tmp)
+        rate, nleft = (ii+1)/(time() - stime), nparams-(ii+1)
+        print('eta: %i seconds' % (nleft / rate))
+    # Save for later
+    sim_store = pd.concat(store).reset_index(None,True)
+    sim_store.to_csv(os.path.join(dir_output,'powersim.csv'), index=False)
+else:
+    sim_store = pd.read_csv(os.path.join(dir_output,'powersim.csv'))
 
 # Calculate the coverage rates
 sim_coverage = sim_store.assign(cover=lambda x: (x.lb < x.r2) & (x.ub > x.r2)).groupby(['r2','n']).cover.mean().reset_index()
