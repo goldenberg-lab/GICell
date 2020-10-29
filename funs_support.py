@@ -164,8 +164,8 @@ def comp_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
     fig.suptitle(t=t, fontsize=14, weight='bold')
     fig.savefig(os.path.join(path, fn))
 
-# arr=img.copy(); pts=phat.copy(); gt=gt.copy()
-# path=dir_inference;fn=idt+'.png';thresh=[thresh_eosin, thresh_inflam]; lbls=['eosin','inflam']
+# arr=img.copy(); pts=np.dstack([phat]); gt=np.dstack([phat])
+# path=dir_figures;fn='phat.png';thresh=[1e-3]; lbls=['eosin']
 def val_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
     idt = fn.replace('.png', '')
     assert len(arr.shape) == 3
@@ -176,7 +176,7 @@ def val_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
     vm = 1
 
     plt.close('all')
-    fig, axes = plt.subplots(nlbl, 3, figsize=(12, 4*nlbl))
+    fig, axes = plt.subplots(nlbl, 3, figsize=(12, 4*nlbl), squeeze=False)
     for ii in range(nlbl):
         thresh_ii = thresh[ii]
         gt_ii, pts_ii = gt[:, :, ii], pts[:, :, ii]
