@@ -298,25 +298,34 @@ def label_blur(idx, cells, vcells, shape, fill=1, s2=2):
 
 
 # Function to parse the zipped file
-# fn=path;dir=dir_base
+# fn=path; dir=dir_base
 def zip_points_parse(fn, dir, valid_cells):
-    valid_files = ['Points ' + str(k + 1) + '.txt' for k in range(7)]
-    with ZipFile(file=fn, mode='r') as zf:
-        names = pd.Series(zf.namelist())
-        if not names.isin(valid_files).all():
-            stopifnot(False)
-        zf.extractall('tmp')
-    # Loop through and parse files
-    holder = []
-    for pp in names:
-        s_pp = pd.read_csv(os.path.join(dir, 'tmp', pp), sep='\t', header=None)
-        stopifnot(s_pp.loc[0, 0] == 'Name')
-        cell_pp = s_pp.loc[0, 1].lower()
-        stopifnot(cell_pp in valid_cells)
-        df_pp = pd.DataFrame(s_pp.loc[3:].values.astype(float), columns=['x', 'y'])
-        stopifnot(df_pp.shape[0] == int(s_pp.loc[2, 1]))  # number of coords lines up
-        df_pp.insert(0, 'cell', cell_pp)
-        holder.append(df_pp)
-    df = pd.concat(holder).reset_index(drop=True)
-    shutil.rmtree('tmp', ignore_errors=True)  # Get rid of temporary folder
+    tt = fn.split('.')[-1]
+    if tt == 'tsv':
+        print('tsv file')
+        df = pd.read_csv(fn, sep='\t', usecols=['x','y','name'])
+        df.rename(columns={'name':'cell'}, inplace=True)
+        df.cell = df.cell.str.lower()
+        assert pd.Series(df.cell.unique()).isin(valid_cells).all()
+    else:
+        print('zip file')
+        valid_files = ['Points ' + str(k + 1) + '.txt' for k in range(7)]
+        with ZipFile(file=fn, mode='r') as zf:
+            names = pd.Series(zf.namelist())
+            if not names.isin(valid_files).all():
+                stopifnot(False)
+            zf.extractall('tmp')
+        # Loop through and parse files
+        holder = []
+        for pp in names:
+            s_pp = pd.read_csv(os.path.join(dir, 'tmp', pp), sep='\t', header=None)
+            stopifnot(s_pp.loc[0, 0] == 'Name')
+            cell_pp = s_pp.loc[0, 1].lower()
+            stopifnot(cell_pp in valid_cells)
+            df_pp = pd.DataFrame(s_pp.loc[3:].values.astype(float), columns=['x', 'y'])
+            stopifnot(df_pp.shape[0] == int(s_pp.loc[2, 1]))  # number of coords lines up
+            df_pp.insert(0, 'cell', cell_pp)
+            holder.append(df_pp)
+        df = pd.concat(holder).reset_index(drop=True)
+        shutil.rmtree('tmp', ignore_errors=True)  # Get rid of temporary folder
     return df

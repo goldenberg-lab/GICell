@@ -1,8 +1,12 @@
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('-n','--n_hours', help="Number of hours to consider",default=24,type=float)
+parser.add_argument('-n','--n_hours', help="Number of hours to consider",default=24,type=int)
+parser.add_argument('-nc','--n_columns', help="Number of columns for figure",default=2,type=int)
 args = parser.parse_args()
 n_hours = args.n_hours
+nc = args.n_columns
+# n_hours = 4
+# nc = 2
 
 ###############################
 ## --- (0) PRELIMINARIES --- ##
@@ -42,15 +46,14 @@ fn_images = os.listdir(dir_images)
 # Find the points modified "today"
 tnow = time()
 nhours = [(tnow-os.path.getmtime(os.path.join(dir_points, f)))/(60**2) for f in fn_points]
-fn_points = [f for f,n in zip(fn_points,nhours) if n < n_hours]
+fn_points = [f for f,n in zip(fn_points,nhours) if n <= n_hours]
 raw_points = pd.Series(fn_points).str.split('\\.', expand=True).iloc[:, 0]
 raw_images = pd.Series(fn_images).str.split('\\.', expand=True).iloc[:, 0]
 stopifnot(raw_points.isin(raw_images).all())
-print('The following images were annotated within %0.1f hours: %s' %
+print('The following images were annotated within %i hours: %s' %
       (n_hours,', '.join(fn_points)))
 
 plt.close()
-nc = 5
 npoint = len(fn_points)
 nr = (npoint // nc) + int((npoint % nc)>0)
 fig, axes = plt.subplots(nrows=nr, ncols=nc, figsize=(nc*5, nr*5))
