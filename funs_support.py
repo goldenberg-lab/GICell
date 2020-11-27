@@ -164,8 +164,9 @@ def comp_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
     fig.suptitle(t=t, fontsize=14, weight='bold')
     fig.savefig(os.path.join(path, fn))
 
-# arr=img.copy(); pts=np.dstack([phat]); gt=np.dstack([phat])
-# path=dir_figures;fn='phat.png';thresh=[1e-3]; lbls=['eosin']
+# arr=img.copy(); pts=phat.copy(); gt=gt.copy()
+# path=dir_save;fn='phat.png';thresh=[thresh_eosin, thresh_inflam];
+# lbls=['Eosinophil','Inflammatory']
 def val_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
     idt = fn.replace('.png', '')
     assert len(arr.shape) == 3
@@ -174,7 +175,7 @@ def val_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
     nlbl = len(lbls)
     rgb_yellow = [255, 255, 0]
     vm = 1
-
+    fs = 16
     plt.close('all')
     fig, axes = plt.subplots(nlbl, 3, figsize=(12, 4*nlbl), squeeze=False)
     for ii in range(nlbl):
@@ -191,22 +192,22 @@ def val_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
                 mat = arr.copy()
                 mat[idx_ii_gt] = rgb_yellow
                 ax.imshow(mat, cmap='viridis', vmin=0, vmax=255)
-                ax.set_title('Annotations', fontsize=12)
+                ax.set_title('Annotations', fontsize=fs)
             elif jj == 1:  # scatter
                 mat = np.zeros(arr.shape) + 1
                 mat[idx_ii_gt] = color1
                 ax.imshow(mat, cmap='viridis', vmin=0, vmax=1)
-                ax.set_title('Actual: %i' % act, fontsize=12)
+                ax.set_title('Actual: %i' % act, fontsize=fs)
             else:  # pred
                 mat = np.zeros(arr.shape) + 1
                 mat[idx_ii_pts] = color1
                 mat2 = np.dstack([mat, np.sqrt(pts_ii / pts_ii.max())])
                 ax.imshow(mat2, cmap='viridis', vmin=0, vmax=1)
-                ax.set_title('Predicted: %i' % pred, fontsize=12)
+                ax.set_title('Predicted: %i' % pred, fontsize=fs)
     patches = [matplotlib.patches.Patch(color=colorz3[i], label=lbls[i]) for i in range(nlbl)]
     fig.subplots_adjust(right=0.85)
-    fig.legend(handles=patches, bbox_to_anchor=(0.97, 0.5))
-    fig.suptitle(t='ID: %s' % idt, fontsize=16, weight='bold')
+    fig.legend(handles=patches, bbox_to_anchor=(0.5, 0.1),fontsize=fs)
+    fig.suptitle(t='ID: %s' % idt, fontsize=fs, weight='bold')
     fig.savefig(os.path.join(path, fn))
 
 

@@ -19,16 +19,15 @@ lst_dir = [dir_output, dir_figures]
 assert all([os.path.exists(z) for z in lst_dir])
 
 # Generate x, y pairs with specific r2
-def dgp_r2(n,r2):
+def dgp_r2(n, r2, k=1):
     """
     if y=x+z, x~N(0,1), z~(0,sig2), then rho(y,x)=1/(1+sig2)**0.5, r2(y,x)=1/(1+sig2)
     """
-    x = np.random.randn(n)
+    x = np.random.randn(n, k)
     sig2 = 1/r2 - 1
-    z = np.sqrt(sig2)*np.random.randn(n)
+    z = np.sqrt(sig2)*np.random.randn(n, k)
     y = x + z
     return x, y
-
 
 # Check
 x, y = dgp_r2(n=int(1e5), r2=0.33)
@@ -39,8 +38,8 @@ print(r2_score(y, x))
 
 nsim = 10000
 p_seq = np.arange(0.05,1,0.05)
-r2_seq = [0.5] #np.arange(0.3,0.51,0.01)
-n_seq = [400] #np.arange(8, 94+1, 1)
+r2_seq = [0.3, 0.4, 0.5]
+n_seq = np.arange(50, 400+1, 25)
 df_params = pd.DataFrame(list(itertools.product(r2_seq, n_seq)),columns=['r2','n'])
 nparams = df_params.shape[0]
 
@@ -51,20 +50,16 @@ for ii, rr in df_params.iterrows():
     r2, n = rr['r2'], int(rr['n'])
     holder = np.zeros(nsim)
     np.random.seed(ii)
-    for jj in range(nsim):
-        if (jj + 1) % 2500 == 0:
-            print('Simulation %i of %i' % (jj+1, nsim))
-        x, y = dgp_r2(n=n, r2=r2)
-        holder[jj] = r2_score(y, x)
-        r2_score(y, x)
+    X, Y = dgp_r2(n=n, r2=r2, k=nsim)
+    holder = r2_score(Y,X,multioutput='raw_values')
     tmp = pd.DataFrame({'qq':np.quantile(holder, p_seq),'pp':p_seq, 'n':n, 'r2':r2})
     store.append(tmp)
     rate, nleft = (ii+1)/(time() - stime), nparams-(ii+1)
     print('eta: %i seconds' % (nleft / rate))
 # Save
 sim_val = pd.concat(store).reset_index(None,True)
-sim_val.to_csv(os.path.join(dir_output,'simval.csv'), index=False)
-sim_val = pd.read_csv(os.path.join(dir_output,'simval.csv'))
+# sim_val.to_csv(os.path.join(dir_output,'simval.csv'), index=False)
+# sim_val = pd.read_csv(os.path.join(dir_output,'simval.csv'))
 sim_val = sim_val.assign(pp=lambda x: x.pp.round(2).astype(str),
                          r2=lambda x: x.r2.round(2).astype(str))
 sim_val = sim_val.pivot_table('qq',['n','r2'],'pp')
@@ -81,16 +76,17 @@ print(sim_val)
 # gg_simval.save(os.path.join(dir_figures,'gg_simvalr2.png'))
 
 ### 80% CI AROUND MEDIAN
+di_r2 = {'0.3':'True R2: 30%','0.4':'True R2: 40%','0.5':'True R2: 50%'}
 cn = ['n','r2','p0.1','p0.5','p0.9','spread']
 tmp = sim_val[sim_val.r2.isin(['0.3','0.4','0.5'])].assign(spread=lambda x: (x['p0.9']-x['p0.1'])/2)[cn]
-gg_simval = (ggplot(tmp, aes(x='n',y='p0.5',color='r2')) + theme_bw() +
-             facet_wrap('~r2',labeller=label_both) +
-             labs(y='R-squared',x='Sample size (n)') +
-             ggtitle('80% CI for r2(y,x)') +
+gg_simval = (ggplot(tmp.query('r2=="0.3"'), aes(x='n',y='p0.5',color='r2')) + theme_bw() +
+             facet_wrap('~r2',labeller=labeller(r2=di_r2)) +
+             labs(y='R-squared',x='Sample size') +
+             ggtitle('Empirical distribution of R2 values (10th-90th percentile)') +
              geom_point() + geom_linerange(aes(ymin='p0.1',ymax='p0.9')) +
-             scale_x_continuous(limits=[7,95],breaks=list(np.arange(8,95,8))) +
              guides(color=False))
-gg_simval.save(os.path.join(dir_figures,'gg_simvalr2.png'),height=5,width=12)
+gg_simval.save(os.path.join(dir_figures,'gg_simvalr2.png'),height=4,width=5)
+# scale_x_continuous(limits=[7, 95], breaks=list(np.arange(8, 95, 8))) +
 
 ### AVERAGE INTERVAL LENGTHS
 gg_simlenr2 = (ggplot(tmp, aes(x='n',y='spread',color='r2')) + theme_bw() +
