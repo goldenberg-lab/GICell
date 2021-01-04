@@ -1,33 +1,20 @@
 ###############################
 ## --- (0) PRELIMINARIES --- ##
 
-import sys
 import os
-import socket
 import shutil
 import pickle
 import numpy as np
 import pandas as pd
 from PIL import Image
 
-from funs_support import stopifnot, zip_points_parse, label_blur
+from funs_support import stopifnot, zip_points_parse, label_blur,find_dir_cell
 
-dir_base = os.getcwd()
-cpu = socket.gethostname()
-# Set directory based on CPU name
-if cpu == 'RT5362WL-GGB':
-    assert os.name == 'nt'  # Make sure we are not in WSL
-    dir_cell = 'D:\\projects\\GICell'
-    print('On predator machine')
-elif cpu == 'snowqueen':
-    print('On snowqueen machine')
-    dir_cell = os.path.join(dir_base, '..')
-else:
-    sys.exit('Where are we?!')
-dir_images = os.path.join(dir_cell, 'images')
-dir_points = os.path.join(dir_cell, 'points')
-dir_output = os.path.join(dir_cell, 'output')
-dir_todo = os.path.join(dir_cell, 'todo')
+dir_base = find_dir_cell()
+dir_images = os.path.join(dir_base, 'images')
+dir_points = os.path.join(dir_base, 'points')
+dir_output = os.path.join(dir_base, 'output')
+dir_todo = os.path.join(dir_base, 'todo')
 # Check
 assert all([os.path.exists(ff) for ff in [dir_images, dir_points]])
 # If first run, output and to do folders may not exist

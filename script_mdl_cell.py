@@ -19,8 +19,9 @@ epoch_check = args.epoch_check
 
 # # for beta testing
 # cells = ['eosinophil']
-# learning_rate, num_params = 0.005, 16
-# num_epochs, epoch_check, batch_size = 15, 15, 6
+# learning_rate, num_params = 0.001, 16
+# num_epochs, epoch_check, batch_size = 2, 1, 2
+
 valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
 assert all([z in valid_cells for z in cells])
 
@@ -32,11 +33,12 @@ import os
 import pickle
 import numpy as np
 import pandas as pd
-from funs_support import stopifnot, torch2array, sigmoid, comp_plt, makeifnot, t2n
+from funs_support import stopifnot, torch2array, sigmoid, comp_plt, makeifnot, t2n, find_dir_cell
 from time import time
 import torch
 from funs_unet import UNet
 from sklearn.metrics import r2_score
+from datetime import datetime
 
 from funs_torch import CellCounterDataset, img2tensor, randomRotate, randomFlip
 from torchvision import transforms
@@ -57,15 +59,15 @@ device = torch.device('cuda' if use_cuda else 'cpu')
 ######################################
 ## --- (1) PREP DATA AND MODELS --- ##
 
-from datetime import datetime
 # Get current day
 dnow = datetime.now().strftime('%Y_%m_%d')
 
-dir_base = os.getcwd()
-dir_output = os.path.join(dir_base, '..', 'output')
+# Set up folders
+dir_base = find_dir_cell()
+dir_output = os.path.join(dir_base, 'output')
 dir_figures = os.path.join(dir_output, 'figures')
 lst_dir = [dir_output, dir_figures]
-[stopifnot(z) for z in lst_dir]
+assert all([os.path.exists(z) for z in lst_dir])
 dir_checkpoint = os.path.join(dir_output, 'checkpoint')
 dir_cell = os.path.join(dir_checkpoint, '_'.join(np.sort(cells)))
 dir_datecell = os.path.join(dir_cell, dnow)
@@ -78,7 +80,7 @@ di_img_point = pickle.load(open(os.path.join(dir_output, 'di_img_point.pickle'),
 ids_tissue = list(di_img_point.keys())
 count1, count2 = np.round(di_img_point[ids_tissue[0]]['lbls'].sum() / 9).astype(int), \
                     di_img_point[ids_tissue[0]]['pts'].shape[0]
-assert count1 == count2
+assert np.abs(count1/count2-1) < 0.02
 
 # Change pixel count to match the cell types
 idx_cell = np.where(pd.Series(valid_cells).isin(cells))[0]
@@ -156,17 +158,23 @@ torch.cuda.empty_cache()
 ## --- (2) BEGIN TRAINING --- ##
 
 # Select instances for training/validation
-# Original list from May
+# Original list from May (8 samples)
 idt_val1 = ['R9I7FYRB_Transverse_17', 'RADS40DE_Rectum_13', '8HDFP8K2_Transverse_5',
            '49TJHRED_Descending_46', 'BLROH2RX_Cecum_72', '8ZYY45X6_Sigmoid_19',
            '6EAWUIY4_Rectum_56', 'BCN3OLB3_Descending_79']
-# Double validation list for August samples
+# Double validation list for August samples (8 samples)
 idt_val2 = ['ESZOXUA8_Transverse_80', '49TJHRED_Rectum_30', '8HDFP8K2_Ascending_35',
             'BCN3OLB3_Descending_51', 'ESZOXUA8_Descending_91', '8ZYY45X6_Ascending_68',
             'E9T0C977_Sigmoid_34', '9U0ZXCBZ_Cecum_41']
-assert len(np.intersect1d(idt_val1, idt_val2))==0
-idt_val = idt_val1 + idt_val2
-
+# Doubling validation set (Jan-2021) with +16
+idt_val3 = ['TRS8XIRT_Rectum_76', 'Y7CXU9SM_Sigmoid_69', 'RADS40DE_Ascending_8', '8HDFP8K2_Rectum_74.png-points.tsv', '49TJHRED_Transverse_19', 'A6TT1X9U_Transverse_87.png-points.tsv', 'Y7CXU9SM_Transverse_94', 'MM6IXZVW_Ascending_18', 'MARQQRM5_Descending_2', '1OE1DR6N_Transverse_24', 'QF0TMM7V_Sigmoid_95', '02FQJM8D_Transverse_52', 'BCN3OLB3_Rectum_20', 'PZUZFPUN_Ascending_0.png-points.tsv', 'A6TT1X9U_Sigmoid_19.png-points.tsv', 'BOD4MJT0_Sigmoid_18.png-points.tsv']
+# Check no overlap
+idt_lst = [idt_val1, idt_val2, idt_val3]
+for ii in range(0,len(idt_lst)-1):
+    for jj in range(ii+1, len(idt_lst)):
+        assert len(np.intersect1d(idt_lst[ii], idt_lst[jj])) == 0
+# Get final set
+idt_val = sum(idt_lst, [])
 idt_train = df_cells.id[~df_cells.id.isin(idt_val)].to_list()
 print('%i training samples\n%i validation samples' % (len(idt_train), len(idt_val)))
 

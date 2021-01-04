@@ -5,7 +5,6 @@ from zipfile import ZipFile
 from scipy.ndimage import gaussian_filter
 from sklearn.metrics import mean_squared_error as mse
 from sklearn.metrics import r2_score
-
 from arch.bootstrap import IIDBootstrap
 
 import matplotlib
@@ -15,6 +14,24 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 
 from colorspace.colorlib import HCL
+
+import sys
+import socket
+
+def find_dir_cell():
+    dir_base = os.getcwd()
+    cpu = socket.gethostname()
+    # Set directory based on CPU name
+    if cpu == 'RT5362WL-GGB':
+        assert os.name == 'nt'  # Make sure we are not in WSL
+        dir_cell = 'D:\\projects\\GICell'
+        print('On predator machine')
+    elif cpu == 'snowqueen':
+        print('On snowqueen machine')
+        dir_cell = os.path.join(dir_base, '..')
+    else:
+        sys.exit('Where are we?!')
+    return dir_cell
 
 def cvec(z):
     return np.atleast_2d(z).T
