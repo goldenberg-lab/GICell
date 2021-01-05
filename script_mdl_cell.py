@@ -18,7 +18,7 @@ num_params = args.num_params
 epoch_check = args.epoch_check
 
 # # for beta testing
-# cells = ['eosinophil']
+# cells = ['eosinophil','neutrophil','plasma','lymphocyte']
 # learning_rate, num_params = 0.001, 16
 # num_epochs, epoch_check, batch_size = 2, 1, 2
 
@@ -84,13 +84,18 @@ assert np.abs(count1/count2-1) < 0.02
 
 # Change pixel count to match the cell types
 idx_cell = np.where(pd.Series(valid_cells).isin(cells))[0]
-for idt in ids_tissue:
+holder = []
+for kk, idt in enumerate(ids_tissue):
     tmp = di_img_point[idt]['lbls'].copy()
     tmp2 = np.atleast_3d(tmp[:, :, idx_cell].sum(2))
     tmp3 = di_img_point[idt]['pts'].copy()
     tmp3 = tmp3[tmp3.cell.isin(cells)]
+    gt, est = tmp3.shape[0], (tmp2.sum() / 9)
+    if gt > 0:
+        err_pct = gt / est - 1
+        assert np.abs(err_pct) < 0.02
     di_img_point[idt]['lbls'] = tmp2
-    assert np.abs( tmp3.shape[0] - (tmp2.sum() / 9) ) < 1
+    holder.append(err_pct)
     del tmp, tmp2, tmp3
 
 # Get the mean number of cells
@@ -313,10 +318,11 @@ for ee in range(num_epochs):
         tit = 'Estimed number of cells at epoch %i' % (ee + 1)
         tit = tit + '\n' + '\n'.join(r2_eval.apply(lambda x: x['tt'] + '=' + '{:0.3f}'.format(x['val']), 1))
         gg_scatter = (ggplot(df_eval,aes(x='pred',y='act',color='tt')) + theme_bw() +
-                      geom_point() + geom_abline(intercept=0,slope=1,color='blue') +
+                      geom_point() + geom_abline(intercept=0,slope=1,color='black',linetype='--') +
                       scale_y_continuous(limits=yl) + scale_x_continuous(limits=yl) +
-                      ggtitle(tit) + labs(x='Predicted',y='Actual'))
-        gg_scatter.save(os.path.join(dir_ee, 'cell_est.png'))
+                      ggtitle(tit) + labs(x='Predicted',y='Actual') +
+                      facet_wrap('~tt') + guides(color=False))
+        gg_scatter.save(os.path.join(dir_ee, 'cell_est.png'),width=8,height=4.5)
 
 # SAVE LOSS AND NETWORK PLEASE!!
 df_loss = pd.concat(epoch_loss).reset_index(None,True)
@@ -340,8 +346,16 @@ gg_loss = (ggplot(df_loss, aes(x='epoch',y='val',color='batch')) +
            theme(subplots_adjust={'wspace': 0.1}) +
            geom_line(aes(x='epoch',y='trend',color='batch')) +
            geom_vline(aes(xintercept='epoch'),data=df_best) +
-           geom_text(aes(x='epoch+1',y='trend',label='epoch'),data=df_best,inherit_aes=False))
+           geom_text(aes(x='epoch+1',y='trend',label='epoch'),data=df_best,inherit_aes=False) +
+           scale_y_continuous(limits=[0,df_loss.val.max()]))
 gg_loss.save(os.path.join(dir_datecell, 'performance_over_epochs.png'),width=12,height=6)
+
+# Save the hyperparameter meta-data
+df_slice = pd.DataFrame({'lr':learning_rate, 'num_params':num_params,
+                         'num_epochs':num_epochs, 'batch_size':batch_size},index=[0])
+df_slice.to_csv(os.path.join(dir_datecell,'hyperparameters.csv'),index=False)
+# learning_rate, num_params = 0.001, 16
+# num_epochs, epoch_check, batch_size = 2, 1,
 
 #qq = df_loss[(df_loss.tt=='Training') & (df_loss.metric=='r2')].pivot('epoch','batch','val').reset_index()
 #print(qq)
