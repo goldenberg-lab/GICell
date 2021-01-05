@@ -7,10 +7,30 @@ conda activate QuPath
 cell_inflam="eosinophil,neutrophil,plasma,lymphocyte"
 cell_eosin="eosinophil"
 
-echo "running inflam"
-python -u script_mdl_cell.py --cells $cell_inflam --num_epochs 60 --epoch_check 15 --batch_size 6 --learning_rate 0.001 --num_params 24
+# Loop over different learning rate/batch_size/architecture configurations
 
-echo "running eosin"
-python -u script_mdl_cell.py --cells $cell_eosin --num_epochs 60 --epoch_check 15 --batch_size 6 --learning_rate 0.001 --num_params 24
+num_epochs=60
+epoch_check=15
+lr_seq="0.001 0.005"
+bs_seq="2 3 4 5 6"
+np_seq="12 16 20 24"
+
+jj=0
+for lr in $lr_seq; do
+  for bs in $bs_seq; do
+    for np in $np_seq; do
+      jj=$((jj+1))
+      echo "##### ITERATION: "$jj" #####"
+      echo "learning rate: "$lr", batch-size: "$bs", # params: "$np
+      echo "--- Cell type: INFLAMMATORY ---"
+      python -u script_mdl_cell.py --cells $cell_inflam --num_epochs $num_epochs --epoch_check $epoch_check --batch_size $bs --learning_rate $lr --num_params $np
+
+      echo "--- Cell type: EOSINOPHIL ---"
+      python -u script_mdl_cell.py --cells $cell_eosin --num_epochs $num_epochs --epoch_check $epoch_check --batch_size $bs --learning_rate $lr --num_params $np
+
+      return
+    done
+  done
+done
 
 echo "end of shell"

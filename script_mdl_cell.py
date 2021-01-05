@@ -59,6 +59,10 @@ device = torch.device('cuda' if use_cuda else 'cpu')
 ######################################
 ## --- (1) PREP DATA AND MODELS --- ##
 
+# Hyperparameter configs
+df_slice = pd.DataFrame({'lr':learning_rate, 'num_params':num_params,
+                         'num_epochs':num_epochs, 'batch_size':batch_size},index=[0])
+
 # Get current day
 dnow = datetime.now().strftime('%Y_%m_%d')
 
@@ -71,9 +75,13 @@ assert all([os.path.exists(z) for z in lst_dir])
 dir_checkpoint = os.path.join(dir_output, 'checkpoint')
 dir_cell = os.path.join(dir_checkpoint, '_'.join(np.sort(cells)))
 dir_datecell = os.path.join(dir_cell, dnow)
+# Folder for hyperparameter configuration
+hp = df_slice.T[0].astype(str).str.cat(sep='').replace('.','')
+dir_hp = os.path.join(dir_datecell,hp)
 makeifnot(dir_checkpoint)
 makeifnot(dir_cell)
 makeifnot(dir_datecell)
+makeifnot(dir_hp)
 
 # Load data
 di_img_point = pickle.load(open(os.path.join(dir_output, 'di_img_point.pickle'), 'rb'))
@@ -259,7 +267,7 @@ for ee in range(num_epochs):
 
     # Create epoch checkpoint folder
     if (ee+1) % epoch_check == 0:
-        dir_ee = os.path.join(dir_datecell,'epoch_'+str(ee+1))
+        dir_ee = os.path.join(dir_hp,'epoch_'+str(ee+1))
         makeifnot(dir_ee)
 
     ### --- MODEL EVALUATION --- ###
@@ -326,7 +334,7 @@ for ee in range(num_epochs):
 
 # SAVE LOSS AND NETWORK PLEASE!!
 df_loss = pd.concat(epoch_loss).reset_index(None,True)
-df_loss.to_csv(os.path.join(dir_datecell,'mdl_performance.csv'),index=False)
+df_loss.to_csv(os.path.join(dir_hp,'mdl_performance.csv'),index=False)
 
 # Make plots
 cn_gg = ['metric','tt','batch']
@@ -348,15 +356,7 @@ gg_loss = (ggplot(df_loss, aes(x='epoch',y='val',color='batch')) +
            geom_vline(aes(xintercept='epoch'),data=df_best) +
            geom_text(aes(x='epoch+1',y='trend',label='epoch'),data=df_best,inherit_aes=False) +
            scale_y_continuous(limits=[0,df_loss.val.max()]))
-gg_loss.save(os.path.join(dir_datecell, 'performance_over_epochs.png'),width=12,height=6)
+gg_loss.save(os.path.join(dir_hp, 'performance_over_epochs.png'),width=12,height=6)
 
 # Save the hyperparameter meta-data
-df_slice = pd.DataFrame({'lr':learning_rate, 'num_params':num_params,
-                         'num_epochs':num_epochs, 'batch_size':batch_size},index=[0])
-df_slice.to_csv(os.path.join(dir_datecell,'hyperparameters.csv'),index=False)
-# learning_rate, num_params = 0.001, 16
-# num_epochs, epoch_check, batch_size = 2, 1,
-
-#qq = df_loss[(df_loss.tt=='Training') & (df_loss.metric=='r2')].pivot('epoch','batch','val').reset_index()
-#print(qq)
-#df_loss[(df_loss.tt=='Validation') & (df_loss.metric=='r2')]
+df_slice.to_csv(os.path.join(dir_hp,'hyperparameters.csv'),index=False)
