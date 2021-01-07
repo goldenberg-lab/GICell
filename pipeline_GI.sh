@@ -14,7 +14,10 @@ python script_data_gen.py
 #python script_mdl_cell.py --cells eosinophil,neutrophil,plasma,lymphocyte --num_epochs 1000 --batch_size 2 --learning_rate 0.001 --num_params 32 --epoch_check 200
 #nohup sh pipeline_nohup.sh > ../cell.log 2>&1 &
 
-# (3)
+# (3) Evaluate the hyperparameters
+python script_hyperparameter.py
+source pipeline_scp.sh  # Will copy over results
+python script_tensorboard.py
 
 # Create the figures to assess performance
 #python script_eval.py
