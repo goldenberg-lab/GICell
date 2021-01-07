@@ -2,7 +2,7 @@
 
 echo "start of shell"
 
-conda activate QuPath
+#conda activate QuPath
 
 cell_inflam="eosinophil,neutrophil,plasma,lymphocyte"
 cell_eosin="eosinophil"
@@ -28,7 +28,7 @@ for lr in $lr_seq; do
       echo "--- Cell type: EOSINOPHIL ---"
       python -u script_mdl_cell.py --cells $cell_eosin --num_epochs $num_epochs --epoch_check $epoch_check --batch_size $bs --learning_rate $lr --num_params $np
 
-      return
+      #return
     done
   done
 done
