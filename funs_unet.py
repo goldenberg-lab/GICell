@@ -9,15 +9,18 @@ import torch.nn.functional as F
 # path=fn_eosin_new
 def find_bl_UNet(path, device, batchnorm=True, start=2, stop=32, step=2):
     preload = torch.load(path)
+    should_stop = False
     for bl in range(start, stop+1, step):
         mdl = UNet(3, 1, bl, batchnorm)
         mdl.to(device)
         try:
             mdl.load_state_dict(preload)
-            cond = False
+            should_stop = True
             print('Model successfully loaded for bl=%i' % bl)
         except:
             print('Model will not load parameters for bl=%i' % bl)
+        if should_stop:
+            break
     return mdl
 
 

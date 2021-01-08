@@ -39,7 +39,7 @@ python script_tensorboard.py  # Creates figures
 # Run on GPU with at least 11G
 for ii in {0..189..1}; do
   echo "Image: "$ii
-  python script_fullimg.py --ridx $ii
+  python script_fullimg.py --ridx $ii --kk 2500
 done
 
 #if [ $root == "mnt" ]; then

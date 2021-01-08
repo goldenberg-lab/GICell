@@ -7,10 +7,12 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-rid', '--ridx', type=int, help='Patient number to pick (0-188)', default=0)
+parser.add_argument('-k', '--kk', type=int, help='The max box size for the convolution on entire image', default=1000)
 args = parser.parse_args()
 ridx = args.ridx
-# ridx = 0
-print('ridx = %i' % ridx)
+kk = args.kk
+#ridx, kk = 0, 1000
+print('ridx = %i, k = %i' % (ridx, kk))
 
 import gc
 import os
@@ -90,9 +92,10 @@ mdl_eosin_new.eval()
 mdl_inflam_new.eval()
 torch.cuda.empty_cache()
 
-kk = 1000
+print('Making sure we can run through GPU')
 with torch.no_grad():
-    print(mdl_eosin_new(torch.rand(1, 3, kk, kk).to(device)))
+    print(mdl_eosin_new(torch.rand(1, 3, kk, kk).to(device)).shape)
+    print(mdl_inflam_new(torch.rand(1, 3, kk, kk).to(device)).shape)
     torch.cuda.empty_cache()
 
 ii, rr = ridx, dat_IDs.loc[ridx]
@@ -101,13 +104,13 @@ idt, tissue, file = rr['idt'], rr['tissue'], rr['fn']
 # Load the image
 path = os.path.join(dir_cleaned, idt, file)
 assert os.path.exists(path)
-# img2 = cv2.imread(path, cv2.IMREAD_COLOR)
 img = Image.open(path)
 img = np.array(img.convert('RGB'))
 height, width, channels = img.shape
 print(img.shape)
 # Loop over the image in convolutional chunks
 nr, nd = int(np.round(width / kk)), int(np.round(height / kk))
+print('Number of rows, number of cols: %i, %i' % (nr, nd))
 phat_eosin = np.zeros([height, width])
 phat_inflam = phat_eosin.copy()
 for r in range(nr):
@@ -123,12 +126,14 @@ for r in range(nr):
             torch.cuda.empty_cache()
         phat_eosin[d * kk:(d * kk) + kk, r * kk: (r * kk) + kk] = tmp_phat_eosin
         phat_inflam[d * kk:(d * kk) + kk, r * kk: (r * kk) + kk] = tmp_phat_inflam
+        print('Num eosin: %0.1f, num inflam: %0.1f' % (phat_eosin.sum(), phat_inflam.sum()))
+
 # # Test figure
 # val_plt(img, np.dstack([phat_inflam]), np.dstack([phat_inflam]), lbls=['inflam'], path=dir_save, thresh=[1e-3], fn='phat_inflam.png')
 num_eosin = phat_eosin.sum()
 num_inflam = phat_inflam.sum()
 ratio = num_eosin / num_inflam
-print('Ratio for patient %s is: %0.1f%%' % (idt, ratio*100))
+print('Ratio for patient %s is: %0.3f%%' % (idt, ratio*100))
 gc.collect()
 del img, phat_eosin, phat_inflam, tmp_img, tmp_phat_eosin, tmp_phat_inflam
 df_slice = pd.DataFrame(rr).T.assign(eosin=num_eosin, inflam=num_inflam)
