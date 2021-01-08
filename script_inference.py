@@ -15,6 +15,7 @@ from torch.utils import data
 from sklearn.metrics import r2_score
 from funs_torch import randomRotate, randomFlip, CellCounterDataset, img2tensor
 from funs_unet import find_bl_UNet
+from scipy.stats import kruskal
 
 from plotnine import *
 
@@ -44,13 +45,176 @@ print('The current date is: %s, the oldest is: %s' % (dnew, dold))
 # Make folder in inference with the newest date
 dir_save = os.path.join(dir_inference, dnew)
 makeifnot(dir_save)
+dir_anno = os.path.join(dir_save, 'anno')
+makeifnot(dir_anno)
 
-#############################################
-## --- (0) LOAD THE GROUND TRUTH DATA  --- ##
+############################################
+## --- (1) LOAD DATA THE PRED VS ACT  --- ##
+
+cells = ['Eosinophil', 'Inflammatory']
+dates = [dold, dnew]
+
+# Load the data sources
+holder = []
+for cell in cells:
+    for date in dates:
+        print('Cell: %s, date: %s' % (cell, date))
+        fn = os.path.join(dir_snapshot, 'df_' + cell + '_' + date + '.csv')
+        tmp = pd.read_csv(fn).assign(cell=cell, date=date)
+        holder.append(tmp)
+        del tmp
+dat_star = pd.concat(holder).rename(columns={'ids': 'id'}).drop(columns='ce').reset_index(None, True)
+del holder
+dat_star = dat_star.assign(act=lambda x: x.act.astype(int))
+# Check that old Validation is equivalent to new Validation (the reverse need not be true)
+check = dat_star.pivot_table('tt', ['id', 'cell'], 'date', lambda x: x)
+check = check.rename(columns=dict(zip(dates, ['old', 'new']))).reset_index()
+assert all(check.query('old=="Validation"').new == 'Validation')
+# Get the ID to labels (with the newest)
+di_id = dat_star.query('date==@dnew').groupby(['tt', 'id']).size().reset_index()
+assert all(di_id[0] == len(cells))
+di_id = dict(zip(di_id.id, di_id.tt))
+# Get the training/validation IDs
+idt_val = [k for k, q in di_id.items() if q == 'Validation']
+idt_train = [k for k, q in di_id.items() if q == 'Training']
+
+# Find the overlap
+old_val_idt = check.query('cell=="Eosinophil" & old=="Validation"').id.to_list()
+
+# Calculate the "ratio" as well
+cn_gg = ['id', 'tt', 'date']
+df_best = dat_star.pivot_table(['act', 'pred'], cn_gg, 'cell').reset_index()
+df_best = df_best.melt(cn_gg).rename(columns={None: 'gt'})
+df_best = df_best.pivot_table('value', cn_gg + ['gt'], 'cell').reset_index()
+df_best = df_best.assign(ratio=lambda x: (x.Eosinophil / x.Inflammatory).fillna(0))
+df_best = df_best.pivot_table('ratio', cn_gg, 'gt').reset_index()
+df_best = pd.concat([dat_star, df_best.assign(cell='Ratio')]).reset_index(None, True)
+
+gg_best = (ggplot(df_best, aes(x='pred', y='act', color='date')) + theme_bw() +
+           geom_point(alpha=0.5) + geom_abline(slope=1, intercept=0, linetype='--') +
+           facet_wrap('~cell+tt', scales='free', labeller=label_both, ncol=2) +
+           labs(x='Predicted', y='Actual') +
+           theme(legend_position='bottom', legend_box_spacing=0.3,
+                 subplots_adjust={'wspace': 0.15, 'hspace': 0.35}) +
+           scale_color_discrete(name='Date'))
+gg_best.save(os.path.join(dir_save, 'gg_scatter_best.png'), height=8, width=6)
+
+tmp = df_best[df_best.id.isin(old_val_idt)].reset_index(None, True).drop(columns='tt')
+tmp['idt'] = tmp.id.map(dict(zip(old_val_idt, range(len(old_val_idt)))))
+
+gg_old_idt = (ggplot(tmp, aes(x='pred', y='act', color='date')) + theme_bw() +
+              geom_point(alpha=0.5) + geom_abline(slope=1, intercept=0, linetype='--') +
+              facet_wrap('~cell', scales='free', labeller=label_both) +
+              labs(x='Predicted', y='Actual') +
+              theme(legend_position='bottom', legend_box_spacing=0.3,
+                    subplots_adjust={'wspace': 0.15}) +
+              scale_color_discrete(name='Date') +
+              geom_text(aes(x='pred', y='act', label='idt'), size=10) +
+              ggtitle('Pred vs actual (validation old date)\nNumbers are the sample ID'))
+gg_old_idt.save(os.path.join(dir_save, 'gg_old_idt.png'), height=4, width=8)
+
+# Get the bootstrap uncertainty around each for the R-squared
+nboot = 500
+cn_bs = ['tt', 'cell', 'date']
+dat_r2 = df_best.groupby(cn_bs).apply(lambda x: r2_score(x.act, x.pred)).reset_index().rename(columns={0: 'r2'})
+
+holder = []
+for ii in range(nboot):
+    tmp_df = df_best.groupby(cn_bs).sample(frac=1, replace=True, random_state=ii).copy().reset_index(None, True)
+    tmp_r2 = tmp_df.groupby(cn_bs).apply(lambda x: r2_score(x.act, x.pred)).reset_index()
+    tmp_r2 = tmp_r2.rename(columns={0: 'r2'}).assign(sim=ii)
+    holder.append(tmp_r2)
+bounds = [0.1, 0.9]
+dat_bs = pd.concat(holder).groupby(cn_bs).r2.quantile(bounds).reset_index()
+dat_bs = dat_bs.pivot_table('r2', cn_bs, 'level_' + str(len(cn_bs)))
+dat_bs = dat_bs.rename(columns={bounds[0]: 'lb', bounds[1]: 'ub'}).reset_index()
+dat_bs = dat_bs.merge(dat_r2, 'left', cn_bs)
+
+posd = position_dodge(0.5)
+gg_bs_r2 = (ggplot(dat_bs, aes(x='date', y='r2', color='tt')) +
+            theme_bw() + geom_point(position=posd) +
+            facet_wrap('~cell') +
+            geom_linerange(aes(ymin='lb', ymax='ub'), position=posd) +
+            ggtitle('R-squared inference\nVertical lines shows empirical 80% CI') +
+            geom_hline(yintercept=0) +
+            labs(y='R2', x='Model date'))
+gg_bs_r2.save(os.path.join(dir_save, 'gg_bs_r2.png'), height=4, width=8)
+
+#######################################################
+## --- (2) LOAD THE NANCY + ROBARTS ANNOTATIONS  --- ##
+
+# Valid tissue types
+tissues = ['Rectum', 'Ascending', 'Sigmoid', 'Transverse', 'Descending', 'Cecum']
+
+# Make sure we can load the GI ordinal data
+dir_GI = os.path.join(dir_base, '..', 'GIOrdinal', 'data')
+dir_cleaned = os.path.join(dir_GI, 'cleaned')
+assert all([os.path.exists(ff) for ff in [dir_GI, dir_cleaned]])
+
+score_thresh = 1
+# Merge with the Nancy + Robarts
+cn_keep = ['ID', 'tissue', 'file']
+cn_nancy = ['CII', 'AIC']
+cn_robarts = ['CII', 'LPN', 'NIE']
+dat_nancy = pd.read_csv(os.path.join(dir_GI, 'df_lbls_nancy.csv'), usecols=cn_keep + cn_nancy)
+dat_robarts = pd.read_csv(os.path.join(dir_GI, 'df_lbls_robarts.csv'), usecols=cn_keep + cn_robarts)
+tmp_nancy = dat_nancy.melt('file', cn_nancy, 'metric').assign(tt='nancy')
+tmp_robarts = dat_robarts.melt('file', cn_robarts, 'metric').assign(tt='robarts')
+dat_NR = pd.concat([tmp_nancy, tmp_robarts]).reset_index(None, True)
+dat_NR = dat_NR[dat_NR.value.notnull()].reset_index(None, True)
+dat_NR = dat_NR.assign(value=lambda x: np.where(x.value >= score_thresh, score_thresh, x.value).astype(int))
+del tmp_nancy, tmp_robarts, dat_nancy, dat_robarts
+tmp = dat_NR.file.str.replace('cleaned_|.png', '').str.split('_', 1, True)
+dat_NR = dat_NR.drop(columns='file').assign(idt=tmp[0], tissue=tmp[1])
+tmp = dat_NR.tissue.str.split('-', 1, True)
+dat_NR = dat_NR.assign(tissue=tmp[0], version=np.where(tmp[1].isnull(), 1, 2))
+dat_NR.rename(columns={'value': 'score'}, inplace=True)
+print(dat_NR.groupby(['tt', 'metric', 'score']).size())
+
+#########################################
+## --- (3) COMPARE TO ENTIRE IMAGE --- ##
+
+di_desc = {'25%': 'lb', '50%': 'med', '75%': 'ub'}
+di_cell = {'eosin': 'Eosinophil', 'inflam': 'Inflammatory', 'ratio': 'Ratio'}
+di_tt = {'nancy': 'Nancy', 'robarts': 'Robarts'}
+cn = ['idt', 'tissue', 'version']
+# Load in the full image densities
+df_fullimg = pd.read_csv(os.path.join(dir_output, 'df_fullimg.csv'))
+df_fullimg = df_fullimg.melt(cn, None, 'cell')
+# Merge
+df_fullimg = dat_NR.merge(df_fullimg, 'inner', cn)
+df_fullimg.cell = df_fullimg.cell.map(di_cell)
+df_fullimg.tt = df_fullimg.tt.map(di_tt)
+df_fullimg.value = np.log(df_fullimg.value)
+
+# Calculate the median/IQR
+nr_desc = df_fullimg.groupby(['metric', 'cell', 'tt', 'score']).value.describe()
+nr_desc = nr_desc[di_desc].rename(columns=di_desc).reset_index()
+
+tit = 'Distribution of UNet output to Nancy/Robarts score'
+gg_nr = (ggplot(df_fullimg, aes(x='score', y='value')) +
+         theme_bw() + ggtitle(tit) +
+         geom_jitter(size=0.5, alpha=0.25, random_state=1, width=0.15, height=0, color='blue') +
+         labs(x='Score level', y='log(Value)') +
+         facet_grid('cell~metric+tt', labeller=label_both, scales='free_y') +
+         geom_point(aes(y='med'), data=nr_desc, size=2, color='black') +
+         geom_linerange(aes(x='score', ymin='lb', ymax='ub'), color='black', size=1, data=nr_desc, inherit_aes=False) +
+         scale_x_continuous(breaks=range(score_thresh + 1), limits=[-0.5, score_thresh + 0.5]))
+gg_nr.save(os.path.join(dir_save, 'nancyrobart_ratio.png'), height=8, width=12)
+
+# Calculate the p-value
+pval = df_fullimg.groupby(['tt', 'metric', 'cell']).apply(
+    lambda x: kruskal(x.value[x.score == 0], x.value[x.score == 1])[1])
+pval = pval.reset_index().rename(columns={0: 'pval'})
+print(np.round(pval, 3))
+
+#################################################
+## --- (4) LOAD THE GROUND TRUTH + MODELS  --- ##
 
 # cell order in the lbls matrix
 valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
 inflam_cells = ['eosinophil', 'neutrophil', 'plasma', 'lymphocyte']
+
 # Load data
 di_img_point = pickle.load(open(os.path.join(dir_output, 'di_img_point.pickle'), 'rb'))
 ids_tissue = list(di_img_point.keys())
@@ -70,167 +234,16 @@ for ii, idt in enumerate(ids_tissue):
         assert np.abs(gt / est - 1) < 0.02
     del tmp, tmp2, tmp3
 
-############################################
-## --- (1) LOAD DATA THE PRED VS ACT  --- ##
-
-cells = ['Eosinophil', 'Inflammatory']
-
-
-# Load the data sources
-holder = []
-for cell in cells:
-    fn = os.path.join(dir_snapshot, 'df_' + cell + '_' + dnew + '.csv')
-    tmp = pd.read_csv(fn).assign(cell=cell)
-    holder.append(tmp)
-    del tmp
-dat_star = pd.concat(holder).rename(columns={'ids': 'id'}).drop(columns='ce')
-del holder
-di_id = dat_star.groupby(['tt', 'id']).size().reset_index()
-di_id = dict(zip(di_id.id, di_id.tt))
-# Get the training/validation IDs
-idt_val = [k for k, q in di_id.items() if q == 'Validation']
-idt_train = [k for k, q in di_id.items() if q == 'Training']
-
-# Create Figure with the actual ratio
-df_best = dat_star.pivot_table(['act', 'pred'], ['id', 'tt'], 'cell').reset_index()
-df_best = df_best.melt(['id', 'tt']).rename(columns={None: 'gt'}).pivot_table('value', ['id', 'tt', 'gt'],
-                                                                              'cell').reset_index()
-df_best = df_best.assign(ratio=lambda x: (x.Eosinophil / x.Inflammatory).fillna(0)).pivot_table('ratio', ['id', 'tt'],'gt').reset_index()
-df_best = pd.concat([dat_star, df_best.assign(cell='ratio')]).reset_index(None,True)
-
-# Merge with the Nancy + Robarts
-cn_keep = ['ID', 'tissue', 'file']
-cn_nancy = ['CII', 'AIC']
-cn_robarts = ['CII', 'LPN', 'NIE']
-dat_nancy = pd.read_csv(os.path.join(dir_GI, 'df_lbls_nancy.csv'), usecols=cn_keep + cn_nancy)
-dat_robarts = pd.read_csv(os.path.join(dir_GI, 'df_lbls_robarts.csv'), usecols=cn_keep + cn_robarts)
-tmp_nancy = dat_nancy.melt('file', cn_nancy, 'metric').assign(
-    value=lambda x: np.where(x.value > 3, 2, x.value.fillna(0)).astype(int), tt='nancy')
-tmp_robarts = dat_robarts.melt('file', cn_robarts, 'metric').assign(
-    value=lambda x: np.where(x.value > 3, 2, x.value.fillna(0)).astype(int), tt='robarts')
-dat_NR = pd.concat([tmp_nancy, tmp_robarts]).reset_index(None, True)
-dat_IDs = dat_nancy[['ID', 'tissue', 'file']]
-del dat_nancy, dat_robarts
-
-
-#########################################
-## --- (0) COMPARE TO ENTIRE IMAGE --- ##
-
-di_desc = {'25%': 'lb', '50%': 'med', '75%': 'ub'}
-
-# One project folder up
-dir_ordinal = os.path.join(dir_base, '..', 'GIOrdinal', 'data')
-if not os.path.exists(dir_ordinal):
-    print('On snowqueen')
-    dir_ordinal = os.path.join(dir_base, '..', 'ordinal', 'data')
-    assert os.path.exists(dir_ordinal)
-
-cn_keep = ['ID', 'tissue', 'file']
-cn_nancy = ['CII', 'AIC']
-cn_robarts = ['CII', 'LPN', 'NIE']
-dat_nancy = pd.read_csv(os.path.join(dir_ordinal, 'df_lbls_nancy.csv'), usecols=cn_keep + cn_nancy)
-dat_robarts = pd.read_csv(os.path.join(dir_ordinal, 'df_lbls_robarts.csv'), usecols=cn_keep + cn_robarts)
-tmp_nancy = dat_nancy.melt('file', cn_nancy, 'metric').assign(
-    value=lambda x: np.where(x.value > 3, 2, x.value.fillna(0)).astype(int), tt='nancy')
-tmp_robarts = dat_robarts.melt('file', cn_robarts, 'metric').assign(
-    value=lambda x: np.where(x.value > 3, 2, x.value.fillna(0)).astype(int), tt='robarts')
-dat_NR = pd.concat([tmp_nancy, tmp_robarts]).reset_index(None, True)
-
-fn_save = pd.Series(os.listdir(dir_save))
-fn_save = fn_save[fn_save.str.contains('df_slice_')].to_list()
-holder = []
-for fn in fn_save:
-    holder.append(pd.read_csv(os.path.join(dir_save, fn)))
-# Merge
-df_ratio = pd.concat(holder).reset_index(None, True).assign(ratio=lambda x: x.eosin / (x.eosin + x.inflam))
-df_ratio = df_ratio.merge(dat_NR)
-df_ratio.drop(columns=['file', 'eosin', 'inflam'], inplace=True)
-df_ratio = df_ratio.sort_values(['tt', 'metric', 'ID', 'tissue']).reset_index(None, True)
-df_ratio.to_csv(os.path.join(dir_output, 'dat_NR_ratio.csv'), index=False)
-# Collapse cateogires to 2+
-df_ratio.value = df_ratio.value.clip(0, 1)
-# Statistical inference
-# nr_long = dat_NR.melt(['ID','tissue','ratio'],['nancy','robarts'],'metric')
-nr_desc = df_ratio.groupby(['metric', 'tt', 'value']).ratio.describe()[di_desc].rename(columns=di_desc).reset_index()
-
-tit = 'Distribution of eosinophilic ratio to Nancy/Robarts score'
-gg_nr = (ggplot(df_ratio, aes(x='value.astype(str)', y='ratio')) +
-         theme_bw() + ggtitle(tit) +
-         geom_jitter(size=0.5, alpha=0.5, random_state=1, width=0.05, height=0, color='blue') +
-         labs(x='Score level', y='Eosinophil ratio') +
-         facet_wrap('~tt+metric') +
-         geom_point(aes(y='med'), data=nr_desc, size=2, color='black') +
-         geom_linerange(aes(x='value', ymin='lb', ymax='ub'), color='black', size=1, data=nr_desc, inherit_aes=False))
-
-gg_nr.save(os.path.join(dir_figures, 'nancyrobart_ratio.png'), height=5, width=12)
-
-from scipy.stats import kruskal
-
-pval = df_ratio.groupby(['tt', 'metric']).apply(lambda x: kruskal(x.ratio[x.value == 0], x.ratio[x.value == 1])[1])
-pval = pval.reset_index().rename(columns={0: 'pval'})
-print(pval)
-print(nr_desc.pivot_table('med', ['tt', 'metric'], 'value').reset_index())
-
-###########################################
-## --- (1) LOAD DATA AND LOAD MODEL  --- ##
-
-# cell order in the lbls matrix
-valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
-inflam_cells = ['eosinophil', 'neutrophil', 'plasma', 'lymphocyte']
-# Load data
-di_img_point = pickle.load(open(os.path.join(dir_output, 'di_img_point.pickle'), 'rb'))
-ids_tissue = list(di_img_point.keys())
-# Image to star eosin and inflam
-idx_eosin = np.where(pd.Series(valid_cells) == 'eosinophil')[0]
-idx_inflam = np.where(pd.Series(valid_cells).isin(inflam_cells))[0]
-for idt in ids_tissue:
-    tmp = di_img_point[idt]['lbls'].copy()
-    tmp_eosin = tmp[:, :, idx_eosin].sum(2)
-    tmp_inflam = tmp[:, :, idx_inflam].sum(2)
-    tmp2 = np.dstack([tmp_eosin, tmp_inflam])
-    tmp3 = di_img_point[idt]['pts'].copy()
-    tmp3 = tmp3[tmp3.cell.isin(inflam_cells)]
-    di_img_point[idt]['lbls'] = tmp2
-    assert np.abs(tmp3.shape[0] - (tmp_inflam.sum() / 9)) < 1
-    del tmp, tmp2, tmp3
-
-cells = ['eosin', 'inflam']
-dates = [dnew, dold]
 # Initialize two models
 fn_eosin_new, fn_inflam_new = tuple([os.path.join(dir_snapshot, 'mdl_' + cell + '_' + dnew + '.pt') for cell in cells])
 fn_eosin_old, fn_inflam_old = tuple([os.path.join(dir_snapshot, 'mdl_' + cell + '_' + dold + '.pt') for cell in cells])
-mdl_eosin_new = find_bl_UNet(path=fn_eosin_new, device=device, batchnorm=True)
-mdl_inflam_new = find_bl_UNet(path=fn_inflam_new, device=device, batchnorm=True)
-mdl_eosin_old = find_bl_UNet(path=fn_eosin_old, device=device, batchnorm=True)
-mdl_inflam_old = find_bl_UNet(path=fn_inflam_old, device=device, batchnorm=True)
-
-# Load the data sources
-fn_dat_new, fn_dat_old = tuple([os.path.join(dir_snapshot, 'dat_star_' + date + '.csv') for date in dates])
-dat_star = pd.read_csv(os.path.join(dir_snapshot, fn_dat_new))
-di_id = dat_star.groupby(['tt', 'id']).size().reset_index()
-di_id = dict(zip(di_id.id, di_id.tt))
-# Get the training/validation IDs
-idt_val = [k for k, q in di_id.items() if q == 'Validation']
-idt_train = [k for k, q in di_id.items() if q == 'Training']
-
-# Create Figure with the actual ratio
-df_best = dat_star.pivot_table(['act', 'pred'], ['id', 'tt'], 'cell').reset_index()
-df_best = df_best.melt(['id', 'tt']).rename(columns={None: 'gt'}).pivot_table('value', ['id', 'tt', 'gt'],
-                                                                              'cell').reset_index()
-df_best = df_best.assign(ratio=lambda x: (x.eosin / x.inflam).fillna(0)).pivot_table('ratio', ['id', 'tt'],
-                                                                                     'gt').reset_index()
-df_best = pd.concat([dat_star.drop(columns=['epoch']), df_best.assign(cell='ratio')])
-
-# gg_best = (ggplot(df_best, aes(x='pred',y='act',color='tt')) + theme_bw() +
-#            geom_point() + geom_abline(slope=1,intercept=0,linetype='--') +
-#            facet_wrap('~cell',scales='free') + labs(x='Predicted',y='Actual') +
-#            theme(legend_position='bottom',legend_box_spacing=0.3,
-#                  subplots_adjust={'wspace': 0.1}) +
-#            scale_color_discrete(name='Set'))
-# gg_best.save(os.path.join(dir_save,'gg_scatter_best.png'),height=5,width=12)
+mdl_eosin_new = find_bl_UNet(path=fn_eosin_new, device=device, batchnorm=True, start=20, stop=24, step=4)
+mdl_inflam_new = find_bl_UNet(path=fn_inflam_new, device=device, batchnorm=True, start=20, stop=24, step=4)
+mdl_eosin_old = find_bl_UNet(path=fn_eosin_old, device=device, batchnorm=True, start=32, stop=32, step=2)
+mdl_inflam_old = find_bl_UNet(path=fn_inflam_old, device=device, batchnorm=True, start=32, stop=32, step=4)
 
 ###########################################################
-## --- (2) EXAMINE PREDICTED PROBABILITIES ON IMAGE  --- ##
+## --- (5) EXAMINE PREDICTED PROBABILITIES ON IMAGE  --- ##
 
 # Loop over validation to make predicted/actual plots
 mdl_eosin_new.eval()
@@ -241,154 +254,161 @@ torch.cuda.empty_cache()
 
 holder = []
 for idt in idt_val:
+    # --- (i) Load image and calculate density/count --- #
     img, gt = di_img_point[idt]['img'].copy(), di_img_point[idt]['lbls'].copy()
     gt_eosin, gt_inflam = gt[:, :, [0]], gt[:, :, [1]]
     timg = torch.tensor(img.transpose(2, 0, 1).astype(np.float32) / 255).to(device)
     timg = timg.reshape([1] + list(timg.shape))
     with torch.no_grad():
-        logits_inflam = mdl_inflam_new(timg).cpu().detach().numpy().sum(0).transpose(1, 2, 0)
-        phat_inflam = sigmoid(logits_inflam)
-        logits_eosin = mdl_eosin_new(timg).cpu().detach().numpy().sum(0).transpose(1, 2, 0)
-        phat_eosin = sigmoid(logits_eosin)
-    pred_inflam, pred_eosin = phat_inflam.sum() / 9, phat_eosin.sum() / 9
+        phat_inflam_new = sigmoid(mdl_inflam_new(timg).cpu().detach().numpy().sum(0).transpose(1, 2, 0))
+        phat_eosin_new = sigmoid(mdl_eosin_new(timg).cpu().detach().numpy().sum(0).transpose(1, 2, 0))
+        phat_inflam_old = sigmoid(mdl_inflam_old(timg).cpu().detach().numpy().sum(0).transpose(1, 2, 0))
+        phat_eosin_old = sigmoid(mdl_eosin_old(timg).cpu().detach().numpy().sum(0).transpose(1, 2, 0))
+        torch.cuda.empty_cache()
+
+    pred_inflam_new, pred_eosin_new = phat_inflam_new.sum() / 9, phat_eosin_new.sum() / 9
+    pred_inflam_old, pred_eosin_old = phat_inflam_old.sum() / 9, phat_eosin_old.sum() / 9
     act_inflam, act_eosin = int(np.round(gt_inflam.sum() / 9, 0)), int(np.round(gt_eosin.sum() / 9, 0))
-    print('ID: %s -- pred inflam: %i (%i), eosin: %i (%i)' %
-          (idt, pred_inflam, act_inflam, pred_eosin, act_eosin))
+    print('ID: %s -- pred new: %i, old: %i (%i), eosin new: %i, old: %i (%i)' %
+          (idt, pred_inflam_new, pred_inflam_old, act_inflam, pred_eosin_new, pred_eosin_old, act_eosin))
+
     # Seperate eosin from inflam
-    thresh_eosin, thresh_inflam = np.quantile(phat_eosin, 0.99), np.quantile(phat_inflam, 0.99)
     print('Threshold inflam: %0.5f, eosin: %0.5f' % (thresh_inflam, thresh_eosin))
     thresh_eosin, thresh_inflam = 0.01, 0.01
-    idx_cell_inflam = gt_inflam > 0
-    idx_cell_eosin = gt_eosin > 0
-    idx_cell_other = idx_cell_inflam & ~idx_cell_eosin
-    idx_cell_nothing = gt_inflam == 0
-    assert np.sum(idx_cell_inflam) == np.sum(idx_cell_eosin) + np.sum(idx_cell_other)
-    assert np.sum(idx_cell_inflam) + np.sum(idx_cell_nothing) == np.prod(img.shape[0:2])
-    idx_thresh_eosin = phat_eosin > thresh_eosin
-    num_other, num_eosin, num_null = idx_cell_other[idx_thresh_eosin].sum(), idx_cell_eosin[idx_thresh_eosin].sum(), \
-                                     idx_cell_nothing[idx_thresh_eosin].sum()
-    tmp = pd.DataFrame({'idt': idt, 'other': num_other, 'eosin': num_eosin,
-                        'null': num_null, 'tot': np.sum(idx_thresh_eosin),
-                        'pred': pred_eosin, 'act': act_eosin}, index=[0])
-    holder.append(tmp)
-    gt = np.dstack([gt_eosin, gt_inflam])
-    phat = np.dstack([phat_eosin, phat_inflam])
-    val_plt(img, phat, gt, lbls=['eosin', 'inflam'], path=dir_save,
-            thresh=[thresh_eosin, thresh_inflam], fn=idt + '.png')
-# Find correlation between...
-df_inf = pd.concat(holder).melt(['idt', 'pred', 'act', 'tot'], ['other', 'eosin', 'null'], 'cell', 'n').sort_values(
-    ['tot', 'idt']).reset_index(None, True)
-df_inf = df_inf.assign(ratio=lambda x: (x.n / x.tot).fillna(0))
-tmp = df_inf.assign(cell=lambda x: pd.Categorical(x.cell, ['null', 'other', 'eosin']))
-tmp.act = pd.Categorical(tmp.act.astype(str), np.sort(tmp.act.unique()).astype(str))
+    gt = np.dstack([gt_eosin, gt_eosin])
+    phat_eosin = np.dstack([phat_eosin_old, phat_eosin_new])
+    val_plt(img, phat_eosin, gt, lbls=dates, path=dir_anno,
+            thresh=[thresh_eosin, thresh_eosin], fn='eosin_' + idt + '.png')
 
-di_cell = dict(zip(['null', 'other', 'eosin'], ['Empty', 'Other Inflam', 'Eosin']))
-gg_inf = (ggplot(tmp, aes(x='act', y='ratio', color='cell')) + theme_bw() +
-          geom_jitter() + facet_wrap('~cell', labeller=labeller(cell=di_cell)) +
-          ggtitle('Distribution of points > threshold') +
-          labs(y='Percent', x='# of actual eosinophils'))
-# scale_color_discrete(name='Cell type',labels=list(di_cell.values()))
-gg_inf.save(os.path.join(dir_save, 'inf_fp_ratio.png'), width=10, height=5)
+    # idx_cell_inflam = gt_inflam > 0
+    # idx_cell_eosin = gt_eosin > 0
+    # idx_cell_other = idx_cell_inflam & ~idx_cell_eosin
+    # idx_cell_nothing = gt_inflam == 0
+    # assert np.sum(idx_cell_inflam) == np.sum(idx_cell_eosin) + np.sum(idx_cell_other)
+    # assert np.sum(idx_cell_inflam) + np.sum(idx_cell_nothing) == np.prod(img.shape[0:2])
+    # idx_thresh_eosin = phat_eosin > thresh_eosin
+    # num_other, num_eosin, num_null = idx_cell_other[idx_thresh_eosin].sum(), idx_cell_eosin[idx_thresh_eosin].sum(), \
+    #                                  idx_cell_nothing[idx_thresh_eosin].sum()
+    # tmp = pd.DataFrame({'idt': idt, 'other': num_other, 'eosin': num_eosin,
+    #                     'null': num_null, 'tot': np.sum(idx_thresh_eosin),
+    #                     'pred': pred_eosin, 'act': act_eosin}, index=[0])
+    # holder.append(tmp)
 
-#############################################
-## --- (3) COMPARE TO PREVIOUS MODELS  --- ##
+# # Find correlation between...
+# df_inf = pd.concat(holder).melt(['idt', 'pred', 'act', 'tot'], ['other', 'eosin', 'null'], 'cell', 'n').sort_values(
+#     ['tot', 'idt']).reset_index(None, True)
+# df_inf = df_inf.assign(ratio=lambda x: (x.n / x.tot).fillna(0))
+# tmp = df_inf.assign(cell=lambda x: pd.Categorical(x.cell, ['null', 'other', 'eosin']))
+# tmp.act = pd.Categorical(tmp.act.astype(str), np.sort(tmp.act.unique()).astype(str))
+#
+# di_cell = dict(zip(['null', 'other', 'eosin'], ['Empty', 'Other Inflam', 'Eosin']))
+# gg_inf = (ggplot(tmp, aes(x='act', y='ratio', color='cell')) + theme_bw() +
+#           geom_jitter() + facet_wrap('~cell', labeller=labeller(cell=di_cell)) +
+#           ggtitle('Distribution of points > threshold') +
+#           labs(y='Percent', x='# of actual eosinophils'))
+# # scale_color_discrete(name='Cell type',labels=list(di_cell.values()))
+# gg_inf.save(os.path.join(dir_save, 'inf_fp_ratio.png'), width=10, height=5)
 
-# Save models in a dictionary
-di_mdls = {'eosin': {dates[0]: mdl_eosin_new, dates[1]: mdl_eosin_old},
-           'inflam': {dates[0]: mdl_inflam_new, dates[1]: mdl_inflam_old}}
 
-for ii, idt in enumerate(idt_val):
-    print(ii + 1)
-    img, gt = di_img_point[idt]['img'].copy(), di_img_point[idt]['lbls'].copy()
-    gt_eosin, gt_inflam = gt[:, :, [0]], gt[:, :, [1]]
-    timg = torch.tensor(img.transpose(2, 0, 1).astype(np.float32) / 255).to(device)
-    timg = timg.reshape([1] + list(timg.shape))
-    holder_phat, holder_gt, lbls = [], [], []
-    for cell in di_mdls:
-        for date in di_mdls[cell]:
-            lbls.append(cell + '_' + date)
-            if cell == 'eosin':
-                holder_gt.append(gt_eosin)
-            else:
-                holder_gt.append(gt_inflam)
-            print('Cell: %s, date: %s' % (cell, date))
-            with torch.no_grad():
-                logits = di_mdls[cell][date].eval()(timg).cpu().detach().numpy().sum(0).transpose(1, 2, 0)
-                phat = sigmoid(logits)
-                holder_phat.append(phat)
-    phat, gt = np.dstack(holder_phat), np.dstack(holder_gt)
-    assert phat.shape == gt.shape
-    thresholds = list(np.repeat(0.01, len(lbls)))
-    val_plt(img, phat, gt, lbls=lbls, path=dir_save, thresh=thresholds, fn='comp_' + idt + '.png')
+# ####################################
+# ## --- (6) RANDOM CROPS/FLIPS --- ##
+#
+# # Get the "actual" cell counts
+# df_actcell = dat_star.pivot_table('act', ['id', 'tt'], 'cell').astype(int).reset_index()
+#
+# # Create datasetloader class
+# params = {'batch_size': 1, 'shuffle': False}
+#
+# k_seq_rotate = [0, 1, 2, 3]
+# k_seq_flip = [0, 1, 2]
+#
+# store = []
+# for kr in k_seq_rotate:
+#     for kf in k_seq_flip:
+#         print('Rotation: %i, Flip: %i' % (kr, kf))
+#         transformer = transforms.Compose(
+#             [randomRotate(fix_k=True, k=kr), randomFlip(fix_k=True, k=kf), img2tensor(device)])
+#         dataset = CellCounterDataset(di=di_img_point, ids=list(di_id), transform=transformer, multiclass=False)
+#         generator = data.DataLoader(dataset=dataset, **params)
+#         holder = []
+#         with torch.no_grad():
+#             for ids_batch, lbls_batch, imgs_batch in generator:
+#                 # Get predictions
+#                 phat_eosin = sigmoid(t2n(mdl_eosin_new(imgs_batch)))
+#                 phat_inflam = sigmoid(t2n(mdl_inflam_new(imgs_batch)))
+#                 num_eosin, num_inflam = phat_eosin.sum(), phat_inflam.sum()
+#                 tmp = pd.DataFrame({'ids': ids_batch, 'eosin': num_eosin, 'inflam': num_inflam}, index=[0])
+#                 holder.append(tmp)
+#                 # Empty cache
+#                 del lbls_batch, imgs_batch
+#                 torch.cuda.empty_cache()
+#         tmp = pd.concat(holder).assign(rotate=kr, flip=kf)
+#         store.append(tmp)
+#
+# # Compare
+# cells = ['eosin', 'inflam', 'ratio']
+# dat_flip = pd.concat(store).reset_index(None, True).assign(ratio=lambda x: x.eosin / (x.eosin + x.inflam))
+# dat_flip[cells[0:2]] = dat_flip[cells[0:2]] / 9  # Normalize by pfac
+# tmp1 = dat_flip.melt(['ids', 'rotate', 'flip'], None, 'cell', 'pred')
+# tmp2 = df_actcell.assign(ratio=lambda x: x.eosin / (x.eosin + x.inflam)).rename(columns={'id': 'ids'}).melt(
+#     ['ids', 'tt'], None, 'cell', 'act')
+# dat_flip = tmp1.merge(tmp2, 'left', ['ids', 'cell']).assign(act=lambda x: x.act.fillna(0))
+#
+# r2_flip = dat_flip.groupby(['tt', 'rotate', 'flip', 'cell']).apply(
+#     lambda x: r2_score(x.act, x.pred)).reset_index().rename(columns={0: 'r2'}).assign(
+#     rf=lambda x: 'r=' + x.rotate.astype(str) + ', f=' + x.flip.astype(str))
+#
+# gg_r2flip = (ggplot(r2_flip, aes(x='rf', y='r2', color='tt', group='tt')) +
+#              theme_bw() + geom_point() + geom_line() +
+#              labs(y='R-squared') + facet_wrap('~cell') +
+#              theme(axis_title_x=element_blank(), axis_text_x=element_text(angle=90)) +
+#              scale_color_discrete(name='Rotate') +
+#              ggtitle('Variation in R2 over flips'))
+# gg_r2flip.save(os.path.join(dir_save, 'r2flip.png'), width=12, height=6)
+#
+# # CV over ID
+# cv_flip = dat_flip.groupby(['ids', 'tt', 'cell']).pred.apply(
+#     lambda x: pd.Series({'mu': x.mean(), 'se': x.std()})).reset_index()
+# cv_flip = cv_flip.pivot_table('pred', ['ids', 'tt', 'cell'], 'level_3').reset_index().assign(cv=lambda x: x.se / x.mu)
+#
+# gg_cv = (ggplot(cv_flip, aes(x='cv', fill='tt')) + theme_bw() +
+#          geom_density(alpha=0.5) + facet_wrap('~cell') +
+#          labs(x='CV') + ggtitle('Coefficient of Variation over flip'))
+# gg_cv.save(os.path.join(dir_save, 'cv_flip.png'), width=6, height=6)
+#
+# gg_cv = (ggplot(cv_flip, aes(x='mu', y='cv', color='tt')) + theme_bw() +
+#          geom_point() + facet_wrap('~cell', scales='free_x') +
+#          theme(subplots_adjust={'wspace': 0.25}) +
+#          labs(x='Mean prediction', y='CV') + ggtitle('Coefficient of Variation from Random Flips/Rotations'))
+# gg_cv.save(os.path.join(dir_save, 'cv_mu.png'), width=8, height=6)
 
-####################################
-## --- (4) RANDOM CROPS/FLIPS --- ##
-
-# Get the "actual" cell counts
-df_actcell = dat_star.pivot_table('act', ['id', 'tt'], 'cell').astype(int).reset_index()
-
-# Create datasetloader class
-params = {'batch_size': 1, 'shuffle': False}
-
-k_seq_rotate = [0, 1, 2, 3]
-k_seq_flip = [0, 1, 2]
-
-store = []
-for kr in k_seq_rotate:
-    for kf in k_seq_flip:
-        print('Rotation: %i, Flip: %i' % (kr, kf))
-        transformer = transforms.Compose(
-            [randomRotate(fix_k=True, k=kr), randomFlip(fix_k=True, k=kf), img2tensor(device)])
-        dataset = CellCounterDataset(di=di_img_point, ids=list(di_id), transform=transformer, multiclass=False)
-        generator = data.DataLoader(dataset=dataset, **params)
-        holder = []
-        with torch.no_grad():
-            for ids_batch, lbls_batch, imgs_batch in generator:
-                # Get predictions
-                phat_eosin = sigmoid(t2n(mdl_eosin_new(imgs_batch)))
-                phat_inflam = sigmoid(t2n(mdl_inflam_new(imgs_batch)))
-                num_eosin, num_inflam = phat_eosin.sum(), phat_inflam.sum()
-                tmp = pd.DataFrame({'ids': ids_batch, 'eosin': num_eosin, 'inflam': num_inflam}, index=[0])
-                holder.append(tmp)
-                # Empty cache
-                del lbls_batch, imgs_batch
-                torch.cuda.empty_cache()
-        tmp = pd.concat(holder).assign(rotate=kr, flip=kf)
-        store.append(tmp)
-
-# Compare
-cells = ['eosin', 'inflam', 'ratio']
-dat_flip = pd.concat(store).reset_index(None, True).assign(ratio=lambda x: x.eosin / (x.eosin + x.inflam))
-dat_flip[cells[0:2]] = dat_flip[cells[0:2]] / 9  # Normalize by pfac
-tmp1 = dat_flip.melt(['ids', 'rotate', 'flip'], None, 'cell', 'pred')
-tmp2 = df_actcell.assign(ratio=lambda x: x.eosin / (x.eosin + x.inflam)).rename(columns={'id': 'ids'}).melt(
-    ['ids', 'tt'], None, 'cell', 'act')
-dat_flip = tmp1.merge(tmp2, 'left', ['ids', 'cell']).assign(act=lambda x: x.act.fillna(0))
-
-r2_flip = dat_flip.groupby(['tt', 'rotate', 'flip', 'cell']).apply(
-    lambda x: r2_score(x.act, x.pred)).reset_index().rename(columns={0: 'r2'}).assign(
-    rf=lambda x: 'r=' + x.rotate.astype(str) + ', f=' + x.flip.astype(str))
-
-gg_r2flip = (ggplot(r2_flip, aes(x='rf', y='r2', color='tt', group='tt')) +
-             theme_bw() + geom_point() + geom_line() +
-             labs(y='R-squared') + facet_wrap('~cell') +
-             theme(axis_title_x=element_blank(), axis_text_x=element_text(angle=90)) +
-             scale_color_discrete(name='Rotate') +
-             ggtitle('Variation in R2 over flips'))
-gg_r2flip.save(os.path.join(dir_save, 'r2flip.png'), width=12, height=6)
-
-# CV over ID
-cv_flip = dat_flip.groupby(['ids', 'tt', 'cell']).pred.apply(
-    lambda x: pd.Series({'mu': x.mean(), 'se': x.std()})).reset_index()
-cv_flip = cv_flip.pivot_table('pred', ['ids', 'tt', 'cell'], 'level_3').reset_index().assign(cv=lambda x: x.se / x.mu)
-
-gg_cv = (ggplot(cv_flip, aes(x='cv', fill='tt')) + theme_bw() +
-         geom_density(alpha=0.5) + facet_wrap('~cell') +
-         labs(x='CV') + ggtitle('Coefficient of Variation over flip'))
-gg_cv.save(os.path.join(dir_save, 'cv_flip.png'), width=6, height=6)
-
-gg_cv = (ggplot(cv_flip, aes(x='mu', y='cv', color='tt')) + theme_bw() +
-         geom_point() + facet_wrap('~cell', scales='free_x') +
-         theme(subplots_adjust={'wspace': 0.25}) +
-         labs(x='Mean prediction', y='CV') + ggtitle('Coefficient of Variation from Random Flips/Rotations'))
-gg_cv.save(os.path.join(dir_save, 'cv_mu.png'), width=8, height=6)
+# #############################################
+# ## --- (X) COMPARE TO PREVIOUS MODELS  --- ##
+#
+# # Save models in a dictionary
+# di_mdls = {'eosin': {dates[0]: mdl_eosin_new, dates[1]: mdl_eosin_old},
+#            'inflam': {dates[0]: mdl_inflam_new, dates[1]: mdl_inflam_old}}
+#
+# for ii, idt in enumerate(idt_val):
+#     print(ii + 1)
+#     img, gt = di_img_point[idt]['img'].copy(), di_img_point[idt]['lbls'].copy()
+#     gt_eosin, gt_inflam = gt[:, :, [0]], gt[:, :, [1]]
+#     timg = torch.tensor(img.transpose(2, 0, 1).astype(np.float32) / 255).to(device)
+#     timg = timg.reshape([1] + list(timg.shape))
+#     holder_phat, holder_gt, lbls = [], [], []
+#     for cell in di_mdls:
+#         for date in di_mdls[cell]:
+#             lbls.append(cell + '_' + date)
+#             if cell == 'eosin':
+#                 holder_gt.append(gt_eosin)
+#             else:
+#                 holder_gt.append(gt_inflam)
+#             print('Cell: %s, date: %s' % (cell, date))
+#             with torch.no_grad():
+#                 logits = di_mdls[cell][date].eval()(timg).cpu().detach().numpy().sum(0).transpose(1, 2, 0)
+#                 phat = sigmoid(logits)
+#                 holder_phat.append(phat)
+#     phat, gt = np.dstack(holder_phat), np.dstack(holder_gt)
+#     assert phat.shape == gt.shape
+#     thresholds = list(np.repeat(0.01, len(lbls)))
+#     val_plt(img, phat, gt, lbls=lbls, path=dir_save, thresh=thresholds, fn='comp_' + idt + '.png')

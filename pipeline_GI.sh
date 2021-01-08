@@ -22,7 +22,7 @@ if [ $root == "mnt" ]; then
 
   # ------ (4) Full image inference ------ #
   # Load the merged slices
-  scp erik@172.16.18.177:$sn_output/df_fullimg.csv $dir_output
+  scp erik@172.16.18.177:$sq_output/df_fullimg.csv $dir_output
 
 else
 
@@ -38,7 +38,7 @@ else
   # ------ (4) Full image inference ------ #
 
   # Run on GPU with at least 11G
-  for ii in {0..189..1}; do
+  for ii in {0..188..1}; do
     echo "Image: "$ii
     python script_fullimg.py --ridx $ii --kk 2500
   done
@@ -51,7 +51,7 @@ else
   # (i) Calculate statistical associations with full-image
   # (ii) Compares current to previous model (visual + scatter)
 
-  python script_inference.py
+  #python script_inference.py
 
 fi
 

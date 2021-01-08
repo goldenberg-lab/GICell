@@ -50,11 +50,6 @@ print('The current date is: %s' % dnew)
 dir_save = os.path.join(dir_inference, dnew)
 makeifnot(dir_save)
 
-# Make sure we can load the GI ordinal data
-dir_GI = os.path.join(dir_base, '..', 'GIOrdinal', 'data')
-dir_cleaned = os.path.join(dir_GI, 'cleaned')
-assert all([os.path.exists(ff) for ff in [dir_GI, dir_cleaned]])
-
 ###########################################
 ## --- (1) LOAD DATA AND UNET MODEL  --- ##
 
