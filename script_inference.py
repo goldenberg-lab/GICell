@@ -73,6 +73,9 @@ for ii, idt in enumerate(ids_tissue):
 ############################################
 ## --- (1) LOAD DATA THE PRED VS ACT  --- ##
 
+cells = ['Eosinophil', 'Inflammatory']
+
+
 # Load the data sources
 holder = []
 for cell in cells:

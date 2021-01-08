@@ -18,7 +18,7 @@ import gc
 import os
 import numpy as np
 import pandas as pd
-from funs_support import sigmoid, t2n, makeifnot, find_dir_cell, val_plt
+from funs_support import sigmoid, t2n, makeifnot, find_dir_cell
 import torch
 from PIL import Image
 from funs_unet import find_bl_UNet
@@ -129,6 +129,7 @@ for r in range(nr):
         print('Num eosin: %0.1f, num inflam: %0.1f' % (phat_eosin.sum(), phat_inflam.sum()))
 
 # # Test figure
+# from funs_support import val_plt
 # val_plt(img, np.dstack([phat_inflam]), np.dstack([phat_inflam]), lbls=['inflam'], path=dir_save, thresh=[1e-3], fn='phat_inflam.png')
 num_eosin = phat_eosin.sum()
 num_inflam = phat_inflam.sum()
