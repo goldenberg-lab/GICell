@@ -7,12 +7,9 @@ import torch.nn.functional as F
 
 # Function that will the baseline parameter size for UNet model
 # path=fn_eosin_new
-def find_bl_UNet(path, device, batchnorm=False):
-    cond = True
-    j = 1
+def find_bl_UNet(path, device, batchnorm=True, start=2, stop=32, step=2):
     preload = torch.load(path)
-    while cond:
-        bl = 2**j
+    for bl in range(start, stop+1, step):
         mdl = UNet(3, 1, bl, batchnorm)
         mdl.to(device)
         try:
@@ -21,9 +18,6 @@ def find_bl_UNet(path, device, batchnorm=False):
             print('Model successfully loaded for bl=%i' % bl)
         except:
             print('Model will not load parameters for bl=%i' % bl)
-        j += 1  # Update
-        if j >= 6:
-            break
     return mdl
 
 

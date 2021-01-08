@@ -6,8 +6,11 @@ if [ $root == "mnt" ]; then
   # Set the baseline director
   dir_base="/mnt/d/projects/GIcell"
   dir_output=$dir_base"/output"
-  echo "copying from snowqueen to local"
+  dir_snapshot=$dir_output/checkpoint/snapshot
+  echo "copying df_hp_perf snowqueen to local"
   scp erik@172.16.18.177:~/Documents/projects/GIProject/cell_counter/output/df_hp_perf.csv $dir_output
+  echo "copying snapshot/* snowqueen to local"
+  scp erik@172.16.18.177:~/Documents/projects/GIProject/cell_counter/output/checkpoint/snapshot/* $dir_snapshot
 fi
 
 
