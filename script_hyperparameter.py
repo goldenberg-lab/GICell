@@ -2,6 +2,14 @@
 DETERMINE THE BEST HYPERPARAMETER CONFIGURATION FROM STEP (2) AFTER TRAINING
 """
 
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-dm', '--date_max', type=str, help='Max date to search over (fmt: %Y_%m_%d)',
+                    default='2021_11_10')
+args = parser.parse_args()
+date_max = args.date_max
+
 import os
 import shutil
 import pandas as pd
@@ -18,6 +26,9 @@ di_cell = {'eosinophil_lymphocyte_neutrophil_plasma':'Inflammatory',
            'eosinophil':'Eosinophil'}
 di_rev_cell = {q:k for k, q in di_cell.items()}
 
+date_max = pd.to_datetime(pd.Series(date_max),format='%Y_%m_%d')[0]
+print('Maximum date to look in folder: %s' % date_max)
+
 ###############################
 # ---- (1) LOAD THE DATA ---- #
 
@@ -32,9 +43,12 @@ for cf in cellf:
     fold1 = os.path.join(dir_checkpoint, cf)
     # Get dates
     dates = pd.Series(os.listdir(fold1))
-    dates = dates[dates.str.contains('^[0-9]{4}')].to_list()
+    dates = dates[dates.str.contains('^[0-9]{4}')]
+    dates_dt = pd.to_datetime(pd.Series(dates),format='%Y_%m_%d')
+    dates = dates[dates_dt <= date_max].to_list()
     print('There are %i date folders for cell: %s = %s' %
           (len(dates), cf, dates))
+
     for d in dates:
         fold2 = os.path.join(fold1, d)
         # Get the hyperparameters
@@ -106,9 +120,10 @@ df_r2_best = df_r2_perf.groupby('cell').apply(lambda x: x.sort_values('val',asce
 
 # Save to the checkpoint
 print('Winning hyperparameter configuation')
-print(df_r2_best.T)
+#print(df_r2_best.T)
 
 for ii, rr in df_r2_best.iterrows():
+    print(rr)
     cell = di_rev_cell[rr['cell']]
     date, epoch, lr, num_params, batch_size, epoch_check, num_epochs = rr['date'], rr['epoch'], rr['lr'], rr['num_params'], rr['batch_size'], rr['epoch_check'], rr['num_epochs']
     # Output folder matches the df_slice from script_mdl_cell.py
