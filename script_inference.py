@@ -38,6 +38,7 @@ makeifnot(dir_inference)
 
 # Get the dates from the snapshot folder
 fns_snapshot = pd.Series(os.listdir(dir_snapshot))
+fns_snapshot = fns_snapshot[fns_snapshot.str.contains('csv$|pt$')]
 dates_snapshot = pd.to_datetime(fns_snapshot.str.split('\\.|\\_', 5, True).iloc[:, 2:5].apply(lambda x: '-'.join(x), 1))
 dates2 = pd.Series(dates_snapshot.sort_values(ascending=False).unique())
 dnew, dold = dates2[0].strftime('%Y_%m_%d'), dates2[len(dates2) - 1].strftime('%Y_%m_%d')
@@ -237,10 +238,10 @@ for ii, idt in enumerate(ids_tissue):
 # Initialize two models
 fn_eosin_new, fn_inflam_new = tuple([os.path.join(dir_snapshot, 'mdl_' + cell + '_' + dnew + '.pt') for cell in cells])
 fn_eosin_old, fn_inflam_old = tuple([os.path.join(dir_snapshot, 'mdl_' + cell + '_' + dold + '.pt') for cell in cells])
-mdl_eosin_new = find_bl_UNet(path=fn_eosin_new, device=device, batchnorm=True, start=20, stop=24, step=4)
-mdl_inflam_new = find_bl_UNet(path=fn_inflam_new, device=device, batchnorm=True, start=20, stop=24, step=4)
+mdl_eosin_new = find_bl_UNet(path=fn_eosin_new, device=device, batchnorm=True, start=32, stop=64, step=8)
+mdl_inflam_new = find_bl_UNet(path=fn_inflam_new, device=device, batchnorm=True, start=32, stop=64, step=8)
 mdl_eosin_old = find_bl_UNet(path=fn_eosin_old, device=device, batchnorm=True, start=32, stop=32, step=2)
-mdl_inflam_old = find_bl_UNet(path=fn_inflam_old, device=device, batchnorm=True, start=32, stop=32, step=4)
+mdl_inflam_old = find_bl_UNet(path=fn_inflam_old, device=device, batchnorm=True, start=32, stop=32, step=2)
 
 ###########################################################
 ## --- (5) EXAMINE PREDICTED PROBABILITIES ON IMAGE  --- ##
@@ -251,6 +252,10 @@ mdl_inflam_new.eval()
 mdl_eosin_old.eval()
 mdl_inflam_old.eval()
 torch.cuda.empty_cache()
+
+idt_val1 = ['R9I7FYRB_Transverse_17', 'RADS40DE_Rectum_13', '8HDFP8K2_Transverse_5',
+           '49TJHRED_Descending_46', 'BLROH2RX_Cecum_72', '8ZYY45X6_Sigmoid_19',
+           '6EAWUIY4_Rectum_56', 'BCN3OLB3_Descending_79']
 
 holder = []
 for idt in idt_val:
@@ -273,12 +278,16 @@ for idt in idt_val:
           (idt, pred_inflam_new, pred_inflam_old, act_inflam, pred_eosin_new, pred_eosin_old, act_eosin))
 
     # Seperate eosin from inflam
-    print('Threshold inflam: %0.5f, eosin: %0.5f' % (thresh_inflam, thresh_eosin))
     thresh_eosin, thresh_inflam = 0.01, 0.01
+    print('Threshold inflam: %0.5f, eosin: %0.5f' % (thresh_inflam, thresh_eosin))
     gt = np.dstack([gt_eosin, gt_eosin])
     phat_eosin = np.dstack([phat_eosin_old, phat_eosin_new])
+    if idt in idt_val1:
+        fn = 'comp_' + idt + '.png'
+    else:
+        fn = 'eosin_' + idt + '.png'
     val_plt(img, phat_eosin, gt, lbls=dates, path=dir_anno,
-            thresh=[thresh_eosin, thresh_eosin], fn='eosin_' + idt + '.png')
+            thresh=[thresh_eosin, thresh_eosin], fn=fn)
 
     # idx_cell_inflam = gt_inflam > 0
     # idx_cell_eosin = gt_eosin > 0

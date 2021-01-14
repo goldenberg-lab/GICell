@@ -12,7 +12,7 @@ args = parser.parse_args()
 ridx = args.ridx
 kk = args.kk
 #ridx, kk = 0, 1000
-print('ridx = %i, k = %i' % (ridx, kk))
+print('--------- ridx = %i, k = %i ----------' % (ridx, kk))
 
 import gc
 import os
@@ -47,6 +47,7 @@ assert all([os.path.exists(ff) for ff in [dir_GI, dir_cleaned]])
 
 # Get the dates from the snapshot folder
 fns_snapshot = pd.Series(os.listdir(dir_snapshot))
+fns_snapshot = fns_snapshot[fns_snapshot.str.contains('csv$|pt$')]
 dates_snapshot = pd.to_datetime(fns_snapshot.str.split('\\.|\\_', 5, True).iloc[:, 2:5].apply(lambda x: '-'.join(x), 1))
 dates2 = pd.Series(dates_snapshot.sort_values(ascending=False).unique())
 dnew = dates2[0].strftime('%Y_%m_%d')
@@ -66,9 +67,9 @@ tissues = ['Rectum', 'Ascending', 'Sigmoid', 'Transverse', 'Descending', 'Cecum'
 # Initialize two models
 fn_eosin_new, fn_inflam_new = tuple([os.path.join(dir_snapshot, 'mdl_' + cell + '_' + dnew + '.pt') for cell in cells])
 mdl_eosin_new = find_bl_UNet(path=fn_eosin_new, device=device, batchnorm=True,
-                             start=12, stop=24, step=4)
+                             start=64, stop=64, step=8)
 mdl_inflam_new = find_bl_UNet(path=fn_inflam_new, device=device, batchnorm=True,
-                              start=12, stop=24, step=4)
+                              start=64, stop=64, step=8)
 
 holder = []
 for idt in os.listdir(dir_cleaned):

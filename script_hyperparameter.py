@@ -92,7 +92,7 @@ for ii, rr in df_fold.iterrows():
     path_df = os.path.join(fold, fn_df)
     path_mdl = os.path.join(fold, fn_mdl)
     dest_df = os.path.join(dir_snapshot, 'df_'+cell+'_'+date+'.csv')
-    dest_mdl = os.path.join(dir_snapshot, 'mdl_' + cell + '_' + date + '.csv')
+    dest_mdl = os.path.join(dir_snapshot, 'mdl_' + cell + '_' + date + '.pt')
     shutil.copy(path_df, dest_df)
     shutil.copy(path_mdl, dest_mdl)
 
