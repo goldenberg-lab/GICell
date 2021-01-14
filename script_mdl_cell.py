@@ -61,7 +61,8 @@ device = torch.device('cuda' if use_cuda else 'cpu')
 
 # Hyperparameter configs
 df_slice = pd.DataFrame({'lr':learning_rate, 'num_params':num_params,
-                         'num_epochs':num_epochs, 'batch_size':batch_size},index=[0])
+                         'num_epochs':num_epochs,'epoch_check':epoch_check,
+                         'batch_size':batch_size},index=[0])
 
 # Get current day
 dnow = datetime.now().strftime('%Y_%m_%d')

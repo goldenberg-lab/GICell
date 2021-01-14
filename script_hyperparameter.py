@@ -16,6 +16,7 @@ dir_snapshot = os.path.join(dir_checkpoint, 'snapshot')
 
 di_cell = {'eosinophil_lymphocyte_neutrophil_plasma':'Inflammatory',
            'eosinophil':'Eosinophil'}
+di_rev_cell = {q:k for k, q in di_cell.items()}
 
 ###############################
 # ---- (1) LOAD THE DATA ---- #
@@ -85,12 +86,41 @@ for ii, rr in df_fold.iterrows():
 df_perf = pd.concat(holder)
 df_perf.to_csv(os.path.join(dir_output, 'df_hp_perf.csv'), index=False)
 
+########################################################
+# ---- (2) FIND THE BEST PERFORMANCE CONFIGUATION ---- #
 
+df_perf = pd.read_csv(os.path.join(dir_output, 'df_hp_perf.csv'))
+has_epoch_check = 'epock_check' in df_perf.columns.to_list()
+if not has_epoch_check:
+    print('Adding on epoch check')
+    df_perf['epoch_check'] = 15
+df_perf = df_perf.assign(is_check=lambda x: x.epoch % x.epoch_check == 0, cell=lambda x: x.cell.map(di_cell))
+# Find the best R-squared
+df_r2_perf = df_perf.query('metric=="r2" & tt=="Validation" & is_check==True')
+cn_gg = ['cell','date','lr','num_params','num_epochs','batch_size','epoch_check']
+# Return only those that modulo have a model
+df_r2_perf = df_r2_perf.groupby(cn_gg).apply(lambda x: x.sort_values('val',ascending=False)).reset_index(None,True)
+df_r2_perf = df_r2_perf.groupby(cn_gg).head(1).reset_index(None,True)
+df_r2_perf.drop(columns = ['tt','metric','batch','is_check'], inplace=True)
+df_r2_best = df_r2_perf.groupby('cell').apply(lambda x: x.sort_values('val',ascending=False)).reset_index(None,True).groupby('cell').head(1).reset_index(None,True)
 
+# Save to the checkpoint
+print('Winning hyperparameter configuation')
+print(df_r2_best.T)
 
-
-
-
+for ii, rr in df_r2_best.iterrows():
+    cell = di_rev_cell[rr['cell']]
+    date, epoch, lr, num_params, batch_size, epoch_check, num_epochs = rr['date'], rr['epoch'], rr['lr'], rr['num_params'], rr['batch_size'], rr['epoch_check'], rr['num_epochs']
+    # Output folder matches the df_slice from script_mdl_cell.py
+    df_slice = pd.DataFrame({'lr': lr, 'num_params': num_params,
+                  'num_epochs': num_epochs,
+                  'batch_size': batch_size}, index=[0])
+    if has_epoch_check:
+        df_slice.insert(3,'epoch_check',epoch_check)
+    term = df_slice.T[0].astype(str).str.cat(sep='').replace('.', '')
+    fold_epoch = os.path.join(dir_checkpoint, cell, date, term, 'epoch_'+str(epoch))
+    path_mdl = os.path.join(fold_epoch, 'mdl_'+str(epoch)+'.pt')
+    assert os.path.exists(path_mdl)
 
 
 
