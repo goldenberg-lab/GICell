@@ -9,11 +9,11 @@ cell_eosin="eosinophil"
 
 # Loop over different learning rate/batch_size/architecture configurations
 
-num_epochs=60
+num_epochs=90
 epoch_check=15
-lr_seq="0.001 0.005"
+lr_seq="0.0005 0.001 0.002"
 bs_seq="2 3 4 5 6"
-np_seq="12 16 20 24"
+np_seq="32 40 48 56 64"
 
 jj=0
 for lr in $lr_seq; do
