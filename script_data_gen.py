@@ -45,6 +45,18 @@ print('All points found in images, %i of %i images found in points' %
 missing_points = raw_images[~raw_images.isin(raw_points)].reset_index(None, True)
 print('There are %i images without any annotations' % (len(missing_points)))
 
+# Get who these patients are
+df_missing = missing_points.str.replace('cleaned_','').str.replace('\\_[0-9]{1,3}','')
+df_missing = df_missing.str.split('_',1,True).rename(columns={0:'idt',1:'tissue'})
+df_missing = df_missing.sort_values(['idt','tissue']).reset_index(None,True)
+# Break with codebreaker
+path_breaker = os.path.join(dir_base,'..','GIOrdinal','data','df_codebreaker.csv')
+df_breaker = pd.read_csv(path_breaker)
+df_breaker['tissue'] = df_breaker.file2.str.split('\\_',2,True).iloc[:,2].str.replace('.png','')
+df_breaker = df_breaker.drop(columns=['file','file2']).rename(columns={'QID':'idt'})
+df_missing = df_missing.merge(df_breaker,on=['idt','tissue'])
+df_missing.to_csv(os.path.join(dir_output,'df_missing.csv'),index=False)
+
 # # TEMP: Compare to the send files
 # fn_extra = pd.Series(os.listdir(os.path.join(dir_cell, 'archive', 'extra')))
 # fn_extra = fn_extra.str.split('\\.', 1, True).iloc[:, 0]

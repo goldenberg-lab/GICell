@@ -8,7 +8,7 @@ import os
 import pickle
 import numpy as np
 import pandas as pd
-from funs_support import makeifnot, sigmoid, val_plt, t2n, find_dir_cell
+from funs_support import makeifnot, sigmoid, val_plt, t2n, find_dir_cell, plt_single
 import torch
 from torchvision import transforms
 from torch.utils import data
@@ -280,6 +280,12 @@ for idt in idt_val:
     # Seperate eosin from inflam
     thresh_eosin, thresh_inflam = 0.01, 0.01
     print('Threshold inflam: %0.5f, eosin: %0.5f' % (thresh_inflam, thresh_eosin))
+    # Plot annotations
+    fn = 'anno_' + idt + '.png'
+    plt_single(arr=img,pts=phat_eosin_new, thresh=thresh_eosin,
+               fn=fn,title='Eosinophil annotation',path=dir_anno)
+
+    # Plot comparison between models
     gt = np.dstack([gt_eosin, gt_eosin])
     phat_eosin = np.dstack([phat_eosin_old, phat_eosin_new])
     if idt in idt_val1:

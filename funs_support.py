@@ -227,18 +227,37 @@ def val_plt(arr, pts, gt, path, lbls=None, thresh=1e-4, fn='some.png'):
     fig.suptitle(t='ID: %s' % idt, fontsize=fs, weight='bold')
     fig.savefig(os.path.join(path, fn))
 
+# arr=img.copy(); pts=phat_inflam_new.copy()
+# path=dir_figures;thresh=1e-2;fn='test.png';title='This is a title'
+"""
+PLOT ORIGINAL FIGURE WITH ANNOTATION OVER CELL AREAS AND CORRESPONDING TRUE AREA SHOWN
+"""
+def plt_single(arr, pts, path, thresh=1e-2, fn='test.png',title=None):
+    plt.close()
+    rgb_yellow = [255, 255, 0]
+    if len(pts.shape) >= 3:
+        pts = pts.sum(2)
+    idx = pts > thresh
+    fig, axes = plt.subplots(1, 2, figsize=(7, 3.5), squeeze=False)
+    for ii, ax in enumerate(axes.flat):
+        if ii == 0:
+            print('Original image with yellow annotation')
+            mat = arr.copy()
+            mat[idx] = rgb_yellow
+            ax.imshow(mat)
+        else:
+            print('Baseline cell type')
+            mat2 = np.zeros(arr.shape,dtype=int) + 255
+            mat2[idx] = arr[idx].copy()
+            ax.imshow(mat2)
+    if title is not None:
+        plt.suptitle(t=title, fontsize=10, weight='bold')
+    plt.savefig(os.path.join(path, fn))
+    plt.close()
 
-# for jj in range(nlabs):
-# jj = 0
-# gt_jj = gt[:,:,jj].copy()
-# alpha_jj = np.where(gt_jj == 0, 0, 1)
-# col_jj = np.tile(matplotlib.colors.to_rgb('yellow'),gt_jj.shape).reshape(arr.shape)
-# col_jj[np.where(alpha_jj == 0)][:,2] = 1
-# ax.imshow(col_jj, cmap='viridis', vmin=0, vmax=1, alpha=alpha_jj)
-
-
-# Function to plot numpy array
-# fn='both2.png'; path=dir_figures; cmap='viridis'
+# # Function to plot numpy array
+# fn='test.png'; path=dir_figures; cmap='viridis'
+# arr=img.copy();pts=None
 def array_plot(arr, path, pts=None, fn='lbl_test.png', cmap='viridis'):  # cmap='gray'
     plt.close()
     nimg = arr.shape[-1]
