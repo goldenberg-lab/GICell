@@ -24,12 +24,12 @@ matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from PIL import Image
 
-from funs_support import stopifnot, zip_points_parse
+from funs_support import stopifnot, zip_points_parse, find_dir_cell
 
-dir_base = os.getcwd() # 'C:\\Users\\erik drysdale\\Documents\\projects\\GI'
-dir_images = os.path.join(dir_base, '..', 'images')
-dir_points = os.path.join(dir_base, '..', 'points')
-dir_output = os.path.join(dir_base, '..', 'output')
+dir_base = find_dir_cell()
+dir_images = os.path.join(dir_base, 'images')
+dir_points = os.path.join(dir_base, 'points')
+dir_output = os.path.join(dir_base, 'output')
 
 if not os.path.exists(dir_output):
     print('output directory does not exist, creating')
