@@ -18,7 +18,7 @@ num_params = args.num_params
 epoch_check = args.epoch_check
 
 # # for beta testing
-# cells = ['eosinophil','neutrophil','plasma','lymphocyte']
+# cells = ['eosinophil']#['eosinophil','neutrophil','plasma','lymphocyte']
 # learning_rate, num_params = 0.001, 16
 # num_epochs, epoch_check, batch_size = 2, 1, 2
 
@@ -117,7 +117,8 @@ b0 = np.log(mu_pixels / (1 - mu_pixels))
 
 # Calculate distribution of cells types across images
 df_cells = pd.concat([di_img_point[idt]['pts'].cell.value_counts().reset_index().assign(id=idt) for idt in ids_tissue])
-df_cells = df_cells.pivot('id', 'index', 'cell').fillna(0).reset_index()
+df_cells = df_cells.pivot('id', 'index', 'cell').fillna(0).astype(int).reset_index()
+df_cells.to_csv(os.path.join(dir_output,'df_cells.csv'),index=False)
 num_cell = df_cells[cells].sum(1).astype(int)
 num_agg = df_cells.drop(columns=['id']).sum(1).astype(int)
 df_cells = pd.DataFrame({'id':df_cells.id,'num_cell':num_cell,'num_agg':num_agg})
