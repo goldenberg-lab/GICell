@@ -16,6 +16,7 @@ from sklearn.metrics import r2_score
 from funs_torch import randomRotate, randomFlip, CellCounterDataset, img2tensor
 from funs_unet import find_bl_UNet
 from scipy.stats import kruskal
+from scipy import stats
 
 from plotnine import *
 
@@ -90,19 +91,25 @@ df_best = df_best.pivot_table('value', cn_gg + ['gt'], 'cell').reset_index()
 df_best = df_best.assign(ratio=lambda x: (x.Eosinophil / x.Inflammatory).fillna(0))
 df_best = df_best.pivot_table('ratio', cn_gg, 'gt').reset_index()
 df_best = pd.concat([dat_star, df_best.assign(cell='Ratio')]).reset_index(None, True)
+# Make a log-scale version for the Cells
+df_best_long = df_best.melt(cn_gg+['cell'],None,'y','val')
+df_best_long = df_best_long.assign(lval=lambda x: np.where(x.cell=='Ratio',x.val, np.log(x.val)))
+df_best_long = df_best_long.melt(cn_gg+['cell','y'],None,'msr')
+df_best_w = df_best_long.pivot_table('value',list(df_best_long.columns.drop(['value','y'])),'y').reset_index()
+df_best_w = df_best_w.sort_values(['msr','date','cell','tt','id']).query('act>-inf').reset_index(None,True)
 
-gg_best = (ggplot(df_best, aes(x='pred', y='act', color='date')) + theme_bw() +
+# Subset to the log scale
+gg_best = (ggplot(df_best_w, aes(x='pred', y='act', color='date')) + theme_bw() +
            geom_point(alpha=0.5) + geom_abline(slope=1, intercept=0, linetype='--') +
-           facet_wrap('~cell+tt', scales='free', labeller=label_both, ncol=2) +
+           facet_wrap('~cell+tt+msr', scales='free', labeller=label_both, ncol=4) +
            labs(x='Predicted', y='Actual') +
            theme(legend_position='bottom', legend_box_spacing=0.3,
                  subplots_adjust={'wspace': 0.15, 'hspace': 0.35}) +
            scale_color_discrete(name='Date'))
-gg_best.save(os.path.join(dir_save, 'gg_scatter_best.png'), height=8, width=6)
+gg_best.save(os.path.join(dir_save, 'gg_scatter_best.png'), height=8, width=12)
 
 tmp = df_best[df_best.id.isin(old_val_idt)].reset_index(None, True).drop(columns='tt')
 tmp['idt'] = tmp.id.map(dict(zip(old_val_idt, range(len(old_val_idt)))))
-
 gg_old_idt = (ggplot(tmp, aes(x='pred', y='act', color='date')) + theme_bw() +
               geom_point(alpha=0.5) + geom_abline(slope=1, intercept=0, linetype='--') +
               facet_wrap('~cell', scales='free', labeller=label_both) +
@@ -116,13 +123,13 @@ gg_old_idt.save(os.path.join(dir_save, 'gg_old_idt.png'), height=4, width=8)
 
 # Get the bootstrap uncertainty around each for the R-squared
 nboot = 500
-cn_bs = ['tt', 'cell', 'date']
-dat_r2 = df_best.groupby(cn_bs).apply(lambda x: r2_score(x.act, x.pred)).reset_index().rename(columns={0: 'r2'})
+cn_bs = ['msr', 'tt', 'cell', 'date']
+dat_r2 = df_best_w.groupby(cn_bs).apply(lambda x: stats.pearsonr(x.act, x.pred)[0]**2).reset_index().rename(columns={0: 'r2'})
 
 holder = []
 for ii in range(nboot):
-    tmp_df = df_best.groupby(cn_bs).sample(frac=1, replace=True, random_state=ii).copy().reset_index(None, True)
-    tmp_r2 = tmp_df.groupby(cn_bs).apply(lambda x: r2_score(x.act, x.pred)).reset_index()
+    tmp_df = df_best_w.groupby(cn_bs).sample(frac=1, replace=True, random_state=ii).copy().reset_index(None, True)
+    tmp_r2 = tmp_df.groupby(cn_bs).apply(lambda x: stats.pearsonr(x.act, x.pred)[0]**2).reset_index()
     tmp_r2 = tmp_r2.rename(columns={0: 'r2'}).assign(sim=ii)
     holder.append(tmp_r2)
 bounds = [0.1, 0.9]
@@ -132,14 +139,14 @@ dat_bs = dat_bs.rename(columns={bounds[0]: 'lb', bounds[1]: 'ub'}).reset_index()
 dat_bs = dat_bs.merge(dat_r2, 'left', cn_bs)
 
 posd = position_dodge(0.5)
-gg_bs_r2 = (ggplot(dat_bs, aes(x='date', y='r2', color='tt')) +
+gg_bs_r2 = (ggplot(dat_bs.query('msr=="val"'), aes(x='date', y='r2', color='tt')) +
             theme_bw() + geom_point(position=posd) +
-            facet_wrap('~cell') +
+            facet_grid('~cell') +
             geom_linerange(aes(ymin='lb', ymax='ub'), position=posd) +
-            ggtitle('R-squared inference\nVertical lines shows empirical 80% CI') +
-            geom_hline(yintercept=0) +
-            labs(y='R2', x='Model date'))
-gg_bs_r2.save(os.path.join(dir_save, 'gg_bs_r2.png'), height=4, width=8)
+            ggtitle('Vertical lines shows empirical 80% CI') +
+            labs(y='Pearson correlation (squared)', x='Model date') +
+            scale_y_continuous(limits=[0,1]))
+gg_bs_r2.save(os.path.join(dir_save, 'gg_bs_r2.png'), height=4, width=10)
 
 #######################################################
 ## --- (2) LOAD THE NANCY + ROBARTS ANNOTATIONS  --- ##
@@ -259,6 +266,7 @@ idt_val1 = ['R9I7FYRB_Transverse_17', 'RADS40DE_Rectum_13', '8HDFP8K2_Transverse
 
 holder = []
 for idt in idt_val:
+    print('id: %s' % idt)
     # --- (i) Load image and calculate density/count --- #
     img, gt = di_img_point[idt]['img'].copy(), di_img_point[idt]['lbls'].copy()
     gt_eosin, gt_inflam = gt[:, :, [0]], gt[:, :, [1]]
@@ -295,34 +303,33 @@ for idt in idt_val:
     val_plt(img, phat_eosin, gt, lbls=dates, path=dir_anno,
             thresh=[thresh_eosin, thresh_eosin], fn=fn)
 
-    # idx_cell_inflam = gt_inflam > 0
-    # idx_cell_eosin = gt_eosin > 0
-    # idx_cell_other = idx_cell_inflam & ~idx_cell_eosin
-    # idx_cell_nothing = gt_inflam == 0
-    # assert np.sum(idx_cell_inflam) == np.sum(idx_cell_eosin) + np.sum(idx_cell_other)
-    # assert np.sum(idx_cell_inflam) + np.sum(idx_cell_nothing) == np.prod(img.shape[0:2])
-    # idx_thresh_eosin = phat_eosin > thresh_eosin
-    # num_other, num_eosin, num_null = idx_cell_other[idx_thresh_eosin].sum(), idx_cell_eosin[idx_thresh_eosin].sum(), \
-    #                                  idx_cell_nothing[idx_thresh_eosin].sum()
-    # tmp = pd.DataFrame({'idt': idt, 'other': num_other, 'eosin': num_eosin,
-    #                     'null': num_null, 'tot': np.sum(idx_thresh_eosin),
-    #                     'pred': pred_eosin, 'act': act_eosin}, index=[0])
-    # holder.append(tmp)
+    idx_cell_inflam = gt_inflam > 0
+    idx_cell_eosin = gt_eosin > 0
+    idx_cell_other = idx_cell_inflam & ~idx_cell_eosin
+    idx_cell_nothing = gt_inflam == 0
+    assert np.sum(idx_cell_inflam) == np.sum(idx_cell_eosin) + np.sum(idx_cell_other)
+    assert np.sum(idx_cell_inflam) + np.sum(idx_cell_nothing) == np.prod(img.shape[0:2])
+
+    idx_thresh_eosin = phat_eosin_new > thresh_eosin
+    pred_eosin1, pred_eosin2 = phat_eosin_new.sum()/9, phat_eosin_new[idx_thresh_eosin].sum()/9
+    num_other, num_eosin, num_null = idx_cell_other[idx_thresh_eosin].sum(), idx_cell_eosin[idx_thresh_eosin].sum(), idx_cell_nothing[idx_thresh_eosin].sum()
+    tmp = pd.DataFrame({'idt': idt, 'other': num_other, 'eosin': num_eosin,
+                        'null': num_null, 'tot': np.sum(idx_thresh_eosin),
+                        'pred1': pred_eosin1, 'pred2':pred_eosin2, 'act': act_eosin}, index=[0])
+    holder.append(tmp)
 
 # # Find correlation between...
-# df_inf = pd.concat(holder).melt(['idt', 'pred', 'act', 'tot'], ['other', 'eosin', 'null'], 'cell', 'n').sort_values(
-#     ['tot', 'idt']).reset_index(None, True)
-# df_inf = df_inf.assign(ratio=lambda x: (x.n / x.tot).fillna(0))
-# tmp = df_inf.assign(cell=lambda x: pd.Categorical(x.cell, ['null', 'other', 'eosin']))
-# tmp.act = pd.Categorical(tmp.act.astype(str), np.sort(tmp.act.unique()).astype(str))
-#
-# di_cell = dict(zip(['null', 'other', 'eosin'], ['Empty', 'Other Inflam', 'Eosin']))
-# gg_inf = (ggplot(tmp, aes(x='act', y='ratio', color='cell')) + theme_bw() +
-#           geom_jitter() + facet_wrap('~cell', labeller=labeller(cell=di_cell)) +
-#           ggtitle('Distribution of points > threshold') +
-#           labs(y='Percent', x='# of actual eosinophils'))
+df_inf = pd.concat(holder).melt(['idt', 'pred1', 'pred2', 'act', 'tot'], ['other', 'eosin', 'null'], 'cell', 'n').sort_values(['tot', 'idt']).reset_index(None, True)
+df_inf = df_inf.assign(ratio=lambda x: (x.n / x.tot).fillna(0))
+tmp = df_inf.assign(cell=lambda x: pd.Categorical(x.cell, ['null', 'other', 'eosin']))
+tmp.act = pd.Categorical(tmp.act.astype(str), np.sort(tmp.act.unique()).astype(str))
+di_cell = dict(zip(['null', 'other', 'eosin'], ['Empty', 'Other Inflam', 'Eosin']))
+gg_inf = (ggplot(tmp, aes(x='act', y='ratio', color='cell')) + theme_bw() +
+          geom_jitter(height=0,width=0.1) + facet_wrap('~cell', labeller=labeller(cell=di_cell)) +
+          ggtitle('Distribution of points > threshold') +
+          labs(y='Percent', x='# of actual eosinophils'))
 # # scale_color_discrete(name='Cell type',labels=list(di_cell.values()))
-# gg_inf.save(os.path.join(dir_save, 'inf_fp_ratio.png'), width=10, height=5)
+gg_inf.save(os.path.join(dir_save, 'inf_fp_ratio.png'), width=12, height=5)
 
 
 # ####################################
