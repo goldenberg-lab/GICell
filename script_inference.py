@@ -260,11 +260,15 @@ mdl_eosin_old.eval()
 mdl_inflam_old.eval()
 torch.cuda.empty_cache()
 
+t_seq = np.round(np.append([0.001],np.arange(0.005,0.101,0.005)),3)
+
+# Use so we know if it's "COMP"
 idt_val1 = ['R9I7FYRB_Transverse_17', 'RADS40DE_Rectum_13', '8HDFP8K2_Transverse_5',
            '49TJHRED_Descending_46', 'BLROH2RX_Cecum_72', '8ZYY45X6_Sigmoid_19',
            '6EAWUIY4_Rectum_56', 'BCN3OLB3_Descending_79']
 
 holder = []
+holder_pr = []
 for idt in idt_val:
     print('id: %s' % idt)
     # --- (i) Load image and calculate density/count --- #
@@ -285,6 +289,29 @@ for idt in idt_val:
     print('ID: %s -- pred new: %i, old: %i (%i), eosin new: %i, old: %i (%i)' %
           (idt, pred_inflam_new, pred_inflam_old, act_inflam, pred_eosin_new, pred_eosin_old, act_eosin))
 
+    # --- (ii) PRECISION/RECALL TRADE-OFF CURVE --- #
+    idx_cell_inflam = gt_inflam > 0
+    idx_cell_eosin = gt_eosin > 0
+    idx_cell_other = idx_cell_inflam & ~idx_cell_eosin
+    idx_cell_nothing = gt_inflam == 0
+    assert np.sum(idx_cell_inflam) == np.sum(idx_cell_eosin) + np.sum(idx_cell_other)
+    assert np.sum(idx_cell_inflam) + np.sum(idx_cell_nothing) == np.prod(img.shape[0:2])
+
+    holder_t = []
+    for t in t_seq:
+        idx_eosin_t_new = phat_eosin_new > t
+        idx_eosin_t_old = phat_eosin_old > t
+        n_tp_new = idx_cell_eosin[idx_eosin_t_new].sum()
+        n_tp_old = idx_cell_eosin[idx_eosin_t_old].sum()
+        n_pred_new = idx_eosin_t_new.sum()
+        n_pred_old = idx_eosin_t_old.sum()
+        n_gt = idx_cell_eosin.sum()
+        tmp = pd.DataFrame({'thresh':t,'tt':[dnew, dold],'n_gt':n_gt,
+                  'n_tp':[n_tp_new, n_tp_old], 'n_pred':[n_pred_new, n_pred_old]})
+        holder_t.append(tmp)
+    holder_pr.append(pd.concat(holder_t).reset_index(None,True).assign(idt=idt))
+
+    # --- (iii) MAKE PLOT FOR 1% THRESHOLD --- #
     # Seperate eosin from inflam
     thresh_eosin, thresh_inflam = 0.01, 0.01
     print('Threshold inflam: %0.5f, eosin: %0.5f' % (thresh_inflam, thresh_eosin))
@@ -303,13 +330,7 @@ for idt in idt_val:
     val_plt(img, phat_eosin, gt, lbls=dates, path=dir_anno,
             thresh=[thresh_eosin, thresh_eosin], fn=fn)
 
-    idx_cell_inflam = gt_inflam > 0
-    idx_cell_eosin = gt_eosin > 0
-    idx_cell_other = idx_cell_inflam & ~idx_cell_eosin
-    idx_cell_nothing = gt_inflam == 0
-    assert np.sum(idx_cell_inflam) == np.sum(idx_cell_eosin) + np.sum(idx_cell_other)
-    assert np.sum(idx_cell_inflam) + np.sum(idx_cell_nothing) == np.prod(img.shape[0:2])
-
+    # --- (iv) CALCULATE POSITIVE PREDICTIVE VALUES AT 1% --- #
     idx_thresh_eosin = phat_eosin_new > thresh_eosin
     pred_eosin1, pred_eosin2 = phat_eosin_new.sum()/9, phat_eosin_new[idx_thresh_eosin].sum()/9
     num_other, num_eosin, num_null = idx_cell_other[idx_thresh_eosin].sum(), idx_cell_eosin[idx_thresh_eosin].sum(), idx_cell_nothing[idx_thresh_eosin].sum()
@@ -317,6 +338,34 @@ for idt in idt_val:
                         'null': num_null, 'tot': np.sum(idx_thresh_eosin),
                         'pred1': pred_eosin1, 'pred2':pred_eosin2, 'act': act_eosin}, index=[0])
     holder.append(tmp)
+
+# Calculate precision/recall trade-off
+dat_pr = pd.concat(holder_pr).reset_index(None,True)
+cn_pr = ['thresh','tt']
+dat_pr_agg = dat_pr.drop(columns='idt').groupby(cn_pr).sum().reset_index().assign(Precision=lambda x: x.n_tp/x.n_pred, Recall=lambda x: x.n_tp/x.n_gt)
+dat_pr_agg = dat_pr_agg.melt(cn_pr, ['Precision','Recall'],'msr')
+
+gg_pr_agg_comp = (ggplot(dat_pr_agg,aes(x='thresh',y='value',color='tt')) +
+             theme_bw() + geom_line() +
+             facet_wrap('~msr',scales='free_y') +
+             scale_color_discrete(name='Model date') +
+                  theme(subplots_adjust={'wspace': 0.15}))
+gg_pr_agg_comp.save(os.path.join(dir_figures,'gg_pr_agg_comp.png'),width=8,height=4)
+
+tmp = dat_pr_agg.query('tt == @dnew')
+gg_pr_agg = (ggplot(tmp,aes(x='thresh',y='value',color='msr')) +
+             theme_bw() + geom_line() +
+             scale_color_discrete(name='Model date') +
+             scale_y_continuous(limits=[0,1]) +
+             scale_x_continuous(breaks=t_seq[np.arange(len(t_seq)) % 2 == 0]) +
+             theme(legend_position=(0.75,0.5),axis_text_x=element_text(angle=90)) +
+             labs(x='Threshold',y='Percent') +
+             ggtitle('Precision/Recall at the pixel level (Eosinophil)'))
+gg_pr_agg.save(os.path.join(dir_figures,'gg_pr_curve.png'),width=5,height=4)
+
+
+
+
 
 # # Find correlation between...
 df_inf = pd.concat(holder).melt(['idt', 'pred1', 'pred2', 'act', 'tot'], ['other', 'eosin', 'null'], 'cell', 'n').sort_values(['tot', 'idt']).reset_index(None, True)
@@ -330,6 +379,9 @@ gg_inf = (ggplot(tmp, aes(x='act', y='ratio', color='cell')) + theme_bw() +
           labs(y='Percent', x='# of actual eosinophils'))
 # # scale_color_discrete(name='Cell type',labels=list(di_cell.values()))
 gg_inf.save(os.path.join(dir_save, 'inf_fp_ratio.png'), width=12, height=5)
+
+##################################################
+## --- (6) EXAMINE THRESHOLDING TRADE-OFFS  --- ##
 
 
 # ####################################
