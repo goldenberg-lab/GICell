@@ -98,15 +98,17 @@ df_best_long = df_best_long.melt(cn_gg+['cell','y'],None,'msr')
 df_best_w = df_best_long.pivot_table('value',list(df_best_long.columns.drop(['value','y'])),'y').reset_index()
 df_best_w = df_best_w.sort_values(['msr','date','cell','tt','id']).query('act>-inf').reset_index(None,True)
 
-# Subset to the log scale
-gg_best = (ggplot(df_best_w, aes(x='pred', y='act', color='date')) + theme_bw() +
+# Subset to the log scale msr
+# tmp = df_best_w.query('cell=="Eosinophil" & msr=="val"')
+tmp = df_best_w
+gg_best = (ggplot(tmp, aes(x='pred', y='act', color='date')) + theme_bw() +
            geom_point(alpha=0.5) + geom_abline(slope=1, intercept=0, linetype='--') +
            facet_wrap('~cell+tt+msr', scales='free', labeller=label_both, ncol=4) +
            labs(x='Predicted', y='Actual') +
            theme(legend_position='bottom', legend_box_spacing=0.3,
-                 subplots_adjust={'wspace': 0.15, 'hspace': 0.35}) +
+                 subplots_adjust={'wspace': 0.15, 'hspace': 0.45}) +
            scale_color_discrete(name='Date'))
-gg_best.save(os.path.join(dir_save, 'gg_scatter_best.png'), height=8, width=12)
+gg_best.save(os.path.join(dir_save, 'gg_scatter_best.png'), height=8, width=14)
 
 tmp = df_best[df_best.id.isin(old_val_idt)].reset_index(None, True).drop(columns='tt')
 tmp['idt'] = tmp.id.map(dict(zip(old_val_idt, range(len(old_val_idt)))))
