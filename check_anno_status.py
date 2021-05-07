@@ -50,6 +50,9 @@ idt_merge = idt_merge.sort_values(['is_new','is_anno'],ascending=False).reset_in
 idt_merge.to_csv(os.path.join(dir_output,'idt_merge.csv'),index=False)
 
 # 2x2 tables
-idt_merge.groupby(['is_new','is_anno']).size().reset_index().rename(columns={0:'n'})
-idt_merge.groupby(['is_new','is_anno']).n_anno.sum().reset_index().query('n_anno>0')
+print(idt_merge.groupby(['is_new','is_anno']).size().reset_index().rename(columns={0:'n'}))
+print(idt_merge.groupby(['is_new','is_anno']).n_anno.sum().reset_index().query('n_anno>0'))
+
+# Find the missing patients from the new batches
+idt_merge.query('is_new==True & is_anno==False').drop(columns=['n_anno','is_anno','is_new']).idt.to_list()
 
