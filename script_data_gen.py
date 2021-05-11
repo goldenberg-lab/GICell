@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from funs_support import stopifnot, zip_points_parse, label_blur,find_dir_cell
+from funs_support import stopifnot, zip_points_parse, label_blur, find_dir_cell
 
 dir_base = find_dir_cell()
 dir_images = os.path.join(dir_base, 'images')

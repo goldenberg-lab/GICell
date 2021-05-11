@@ -357,16 +357,17 @@ def zip_points_parse(fn, dir, valid_cells):
             sys.exit('Unidentified cell')
     else:
         print('zip file')
-        valid_files = ['Points ' + str(k + 1) + '.txt' for k in range(7)]
+        path_tmp = os.path.join(dir, 'tmp')
         with ZipFile(file=fn, mode='r') as zf:
-            names = pd.Series(zf.namelist())
-            if not names.isin(valid_files).all():
-                stopifnot(False)
-            zf.extractall('tmp')
+            zf.extractall(path_tmp)
         # Loop through and parse files
+        names = pd.Series(zf.namelist())
+        # valid_files = ['Points ' + str(k + 1) + '.txt' for k in range(7)]
+        # if not names.isin(valid_files).all():
+        #     stopifnot(False)
         holder = []
         for pp in names:
-            s_pp = pd.read_csv(os.path.join(dir, 'tmp', pp), sep='\t', header=None)
+            s_pp = pd.read_csv(os.path.join(path_tmp, pp), sep='\t', header=None)
             stopifnot(s_pp.loc[0, 0] == 'Name')
             cell_pp = s_pp.loc[0, 1].lower()
             stopifnot(cell_pp in valid_cells)
@@ -375,5 +376,6 @@ def zip_points_parse(fn, dir, valid_cells):
             df_pp.insert(0, 'cell', cell_pp)
             holder.append(df_pp)
         df = pd.concat(holder).reset_index(drop=True)
+        assert pd.Series(df.cell.unique()).isin(valid_cells).all()
         shutil.rmtree('tmp', ignore_errors=True)  # Get rid of temporary folder
     return df

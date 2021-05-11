@@ -124,6 +124,7 @@ num_agg = df_cells.drop(columns=['id']).sum(1).astype(int)
 df_cells = pd.DataFrame({'id':df_cells.id,'num_cell':num_cell,'num_agg':num_agg})
 df_cells = df_cells.assign(ratio = lambda x: x.num_cell/x.num_agg)
 df_cells = df_cells.sort_values('ratio').reset_index(None,True)
+df_cells.id = df_cells.id.str.split('\\.',1,True).iloc[:,0]
 # tmp = df_cells.copy()
 # num_val = int(np.floor(df_cells.shape[0] * 0.2))
 # quants = np.linspace(0,1,num_val+2)[1:-1]
@@ -134,7 +135,15 @@ df_cells = df_cells.sort_values('ratio').reset_index(None,True)
 #     holder.append(idt)
 #     tmp = tmp[tmp.id != idt]
 # df_cells.insert(1,'tt',np.where(df_cells.id.isin(holder),'test','train'))
+gg_cells = (ggplot(df_cells.melt('id',None,'tt'),aes(x='value')) + 
+    theme_bw() + labs(x='Value',y='Frequency') + 
+    facet_wrap('~tt',scales='free') + 
+    geom_histogram(bins=20,color='black',fill='red',alpha=0.5) + 
+    theme(axis_title_x=element_blank(),subplots_adjust={'wspace': 0.15}))
+gg_cells.save(os.path.join(dir_figures,'gg_cells_'+'_'.join(cells)+'.png'),width=12,height=4)
+np.sum(df_cells==0,0)
 print(df_cells)
+
 
 # Load the model
 torch.manual_seed(1234)
