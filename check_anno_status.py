@@ -17,6 +17,7 @@ path_breaker = os.path.join(dir_ordinal,'df_codebreaker.csv')
 df_breaker = pd.read_csv(path_breaker,usecols=cn_breaker)
 df_breaker.rename(columns={'QID':'idt','type':'tt','ID':'oid'},inplace=True)
 df_breaker = df_breaker.drop_duplicates().reset_index(None,True)
+df_nancy = pd.read_csv(os.path.join(dir_ordinal,'df_lbls_nancy.csv'))
 
 # Get the "new" images
 fn_20x = pd.Series(os.listdir(dir_20x)).str.split('\\s',1,True)[0]
@@ -56,3 +57,9 @@ print(idt_merge.groupby(['is_new','is_anno']).n_anno.sum().reset_index().query('
 # Find the missing patients from the new batches
 idt_merge.query('is_new==True & is_anno==False').drop(columns=['n_anno','is_anno','is_new']).idt.to_list()
 
+# Remaining rectal patients
+old_rectal = idt_merge.query('is_new==False & is_anno==False & tissue=="Rectum"')
+old_rectal = old_rectal[['idt','oid','tissue']].merge(df_nancy.drop(columns=['file','lab_dt']).rename(columns={'ID':'oid'}),'left',['oid','tissue'])
+old_rectal = old_rectal.drop(columns=['oid','score'])
+old_rectal[['CII','AIC','ULC']] = old_rectal[['CII','AIC','ULC']].astype(int)
+old_rectal
