@@ -5,7 +5,7 @@ parser.add_argument('-nc','--n_columns', help="Number of columns for figure",def
 args = parser.parse_args()
 n_hours = args.n_hours
 nc = args.n_columns
-# n_hours, nc = 48, 7
+# n_hours, nc = 96, 6
 
 ###############################
 ## --- (0) PRELIMINARIES --- ##
@@ -62,7 +62,7 @@ for ii_fn, ax in zip(enumerate(fn_points),axes.flatten()):
     path = os.path.join(dir_points, fn)
     df_ii = zip_points_parse(path, dir_base, valid_cells)
     df_ii.cell = pd.Categorical(df_ii.cell, categories=valid_cells)
-    path_img = os.path.join(dir_images, fn.split('-')[0])
+    path_img = os.path.join(dir_images, '-'.join(fn.split('-')[:-1]))
     img_vals = np.array(Image.open(path_img))
     ax.imshow(img_vals)
     sns.scatterplot(x='x', y='y', hue='cell', data=df_ii, ax=ax)

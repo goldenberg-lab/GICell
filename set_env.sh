@@ -12,9 +12,9 @@ n_conda=$(($(command -v "conda" | wc -l)))
 echo $n_conda
 if [ $n_conda == 1 ]; then
   echo "Conda exists, running locally"
-  e_los=$(conda env list | grep $n_env)
+  e_los=$(conda env list | grep $n_env | cut -d" " -f1)
   n_los=$(($(echo $e_los | wc -w)))
-  if [ $n_los -gt 0 ]; then
+  if [ $n_los == 1 ]; then
     echo $n_env" environment already found"
     conda activate $n_env
   else
@@ -24,14 +24,14 @@ if [ $n_conda == 1 ]; then
   fi
 else
   echo "Conda does not exist, loading python module"
-  module load python/3.7.1
+  module load python/3.7.7
 fi
 
 
 echo "------------------- PYTHON LOCATION -------------------- "
 which python
 
-fn="qupath_env.txt" # filename with the different pip environments
+fn="env_qupath.txt" # filename with the different pip environments
 
 # --- install/update packages --- #
 n_line=$(cat $fn | grep -n pip | tail -1 | cut -d ":" -f1)
@@ -49,8 +49,10 @@ for ii in `seq $n_line $n_end`; do
 done
 echo "packages: "$holder
 
-if [ $n_conda == 1 ]; then
-  echo "Installing for conda environment"
+if [[ $n_conda == 1 ]] && [[ $n_los == 1 ]]; then
+  echo "Conda already exists and QuPath already exists"
+elif [[ $n_conda == 1 ]] && [[ $n_los == 0 ]]; then
+  echo "Installing QuPath for conda environment"
   pip install $holder
 else
   printf "\n------------ Installing for HPF ------------\n"
@@ -58,5 +60,3 @@ else
 fi
 
 echo "end of script"
-return
-
