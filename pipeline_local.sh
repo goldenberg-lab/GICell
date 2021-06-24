@@ -9,6 +9,9 @@ sq_output="~/Documents/projects/GI/GICell/output"
 sq_checkpoint=$sq_output/checkpoint
 sq_snapshot=$sq_checkpoint/snapshot
 
+echo "--- (0) CHECK ALIGNMENT BETWEEN ORDINAL AND CELL ---"
+python check_crop_GI.py
+
 echo "--- (1) CHECK CONDA ENVIRONMENT ---"
 source set_env.sh
 
