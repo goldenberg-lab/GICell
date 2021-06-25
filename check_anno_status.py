@@ -10,7 +10,7 @@ dir_images = os.path.join(dir_base, 'images')
 dir_points = os.path.join(dir_base, 'points')
 dir_output = os.path.join(dir_base, 'output')
 dir_ordinal = os.path.join(dir_base,'..','GIOrdinal','data')
-dir_20x = os.path.join(dir_ordinal,'20x')
+dir_20x = os.path.join(dir_ordinal,'20X')
 # Load in the code breaker
 cn_breaker = ['ID','tissue','type','QID']
 path_breaker = os.path.join(dir_ordinal,'df_codebreaker.csv')
@@ -21,6 +21,7 @@ df_nancy = pd.read_csv(os.path.join(dir_ordinal,'df_lbls_nancy.csv'))
 
 # Get the "new" images
 fn_20x = pd.Series(os.listdir(dir_20x)).str.split('\\s',1,True)[0]
+fn_20x = fn_20x[fn_20x.str.contains('^S')].reset_index(None, True)
 # Note that "SH19-1002" was a failed image so removing
 fn_20x = pd.Series(np.setdiff1d(fn_20x,['SH19-1002']))
 

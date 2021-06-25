@@ -10,7 +10,6 @@ import sys
 import socket
 
 def find_dir_cell():
-    dir_base = os.getcwd()
     cpu = socket.gethostname()
     # Set directory based on CPU name
     if cpu == 'RT5362WL-GGB':
@@ -21,11 +20,10 @@ def find_dir_cell():
         elif os.name == 'posix':
             dir_cell = '/mnt/d/projects/GICell'
         else:
-            sys.exit('What OS are we on?!')
             assert False
     elif cpu == 'snowqueen':
         print('On snowqueen machine')
-        dir_cell = os.path.join(dir_base, '..')
+        dir_cell = '/data/GICell'
     else:
         sys.exit('Where are we?!')
     return dir_cell
