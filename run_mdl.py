@@ -1,53 +1,54 @@
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-c', '--cells', type=str, help='List of comma-seperated cell types',
-                    default='eosinophil,neutrophil,plasma,enterocyte,other,lymphocyte')
-parser.add_argument('-ne', '--num_epochs', type=int, default=1000, help='Number of epochs')
-parser.add_argument('-bs', '--batch_size', type=int, default=2, help='Batch size')
-parser.add_argument('-lr', '--learning_rate', type=float, default=1e-3, help='Learning rate')
-parser.add_argument('-np', '--num_params', type=int, default=8, help='Number of initial params for NNet')
-parser.add_argument('-ec', '--epoch_check', type=int, default=250, help='Iteration number to save checkpoint')
-
+parser.add_argument('--is_eosin', dest='is_eosin', action='store_true')
+parser.add_argument('--is_inflam', dest='is_inflam', action='store_true')
+parser.set_defaults(is_eosin=False, is_inflam=False)
+parser.add_argument('--nepoch', type=int, default=1000, help='Number of epochs')
+parser.add_argument('--batch', type=int, default=1, help='Batch size')
+parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
+parser.add_argument('--p', type=int, default=8, help='Number of initial params for NNet')
+parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
 args = parser.parse_args()
-cells = args.cells.split(',')
-num_epochs = args.num_epochs
-batch_size = args.batch_size
-learning_rate = args.learning_rate
-num_params = args.num_params
-epoch_check = args.epoch_check
+is_eosin, is_inflam = args.is_eosin, args.is_inflam
+nepoch, batch, lr, p, nfill = args.nepoch, args.batch, args.lr, args.p, args.nfill
 
 # # for beta testing
-# cells = ['eosinophil']#['eosinophil','neutrophil','plasma','lymphocyte']
-# learning_rate, num_params = 0.001, 16
-# num_epochs, epoch_check, batch_size = 2, 1, 2
+# is_eosin, is_inflam, nfill = True, False, 1
+# lr, p, nepoch, epoch_check, batch = 1e-3, 16, 2, 1, 2
 
-valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
-assert all([z in valid_cells for z in cells])
+# Needs to be mutually exlusive
+assert is_eosin != is_inflam
+if is_eosin:
+    cells = ['eosinophil']
+else:
+    cells = ['eosinophil','neutrophil','plasma','lymphocyte']
 
-print('Cells: %s\nnum_epochs: %i\nbatch_size: %i\nlearning_rate: %0.3f, num_params: %i' % (', '.join(cells), num_epochs, batch_size, learning_rate, num_params))
-# import sys
-# sys.exit('end of script')
+print('Cells: %s\nnepoch: %i\nbatch: %i\nlr: %0.3f, np: %i' % (cells, nepoch, batch, lr, p))
+
+# number of padded points (i.e. count inflator)
+fillfac = (2 * nfill + 1) ** 2
+print('nfill: %i, fillfac: x%i' % (nfill, fillfac))
 
 import os
-import pickle
+import hickle
+import gc
 import numpy as np
 import pandas as pd
-from funs_support import stopifnot, torch2array, sigmoid, comp_plt, makeifnot, t2n, find_dir_cell
+from funs_support import torch2array, sigmoid, makeifnot, t2n, find_dir_cell
 from time import time
 import torch
-from funs_unet import UNet
+from mdls.unet import UNet
 from sklearn.metrics import r2_score
 from datetime import datetime
-
 from funs_torch import CellCounterDataset, img2tensor, randomRotate, randomFlip
 from torchvision import transforms
 from torch.utils import data
 
-import matplotlib
-if not matplotlib.get_backend().lower() == 'agg':
-    matplotlib.use('Agg')
-from plotnine import *
+# import matplotlib
+# if not matplotlib.get_backend().lower() == 'agg':
+#     matplotlib.use('Agg')
+# from plotnine import *
 
 use_cuda = torch.cuda.is_available()
 if use_cuda:
@@ -56,13 +57,8 @@ else:
     print('CUDA IS NOT AVAILABLE, USING CPU')
 device = torch.device('cuda' if use_cuda else 'cpu')
 
-######################################
-## --- (1) PREP DATA AND MODELS --- ##
-
 # Hyperparameter configs
-df_slice = pd.DataFrame({'lr':learning_rate, 'num_params':num_params,
-                         'num_epochs':num_epochs,'epoch_check':epoch_check,
-                         'batch_size':batch_size},index=[0])
+df_slice = pd.DataFrame({'lr':lr, 'np':np,'nepoch':nepoch,'batch':batch},index=[0])
 
 # Get current day
 dnow = datetime.now().strftime('%Y_%m_%d')
@@ -79,46 +75,58 @@ dir_datecell = os.path.join(dir_cell, dnow)
 # Folder for hyperparameter configuration
 hp = df_slice.T[0].astype(str).str.cat(sep='').replace('.','')
 dir_hp = os.path.join(dir_datecell,hp)
-makeifnot(dir_checkpoint)
-makeifnot(dir_cell)
-makeifnot(dir_datecell)
-makeifnot(dir_hp)
 
-# Load data
-di_img_point = pickle.load(open(os.path.join(dir_output, 'di_img_point.pickle'), 'rb'))
-ids_tissue = list(di_img_point.keys())
-count1, count2 = np.round(di_img_point[ids_tissue[0]]['lbls'].sum() / 9).astype(int), \
-                    di_img_point[ids_tissue[0]]['pts'].shape[0]
+# lst_newdir = [dir_checkpoint, dir_cell, dir_datecell, dir_hp]
+# for dir in lst_newdir:
+#     makeifnot(dir)
+
+# Order of valid_cells matters (see idx_cells & label_blur)
+valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
+
+######################################
+## --- (1) PREP DATA AND MODELS --- ##
+
+# --- (i) Load data --- #
+path_pickle = os.path.join(dir_output, 'annot_hsk.pickle')
+di_data = hickle.load(path_pickle)
+gc.collect()
+ids_tissue = list(di_data.keys())
+count1 = np.round(di_data[ids_tissue[0]]['lbls'].sum() / 9).astype(int)
+count2 = di_data[ids_tissue[0]]['pts'].shape[0]
 assert np.abs(count1/count2-1) < 0.02
 
-# Change pixel count to match the cell types
+# --- (ii) Set labels to match cell type --- #
 idx_cell = np.where(pd.Series(valid_cells).isin(cells))[0]
 holder = []
 for kk, idt in enumerate(ids_tissue):
-    tmp = di_img_point[idt]['lbls'].copy()
+    tmp = di_data[idt]['lbls'].copy()
     tmp2 = np.atleast_3d(tmp[:, :, idx_cell].sum(2))
-    tmp3 = di_img_point[idt]['pts'].copy()
+    tmp3 = di_data[idt]['pts'].copy()
     tmp3 = tmp3[tmp3.cell.isin(cells)]
-    gt, est = tmp3.shape[0], (tmp2.sum() / 9)
-    if gt > 0:
-        err_pct = gt / est - 1
+    est = tmp2.sum() / fillfac
+    if len(tmp3) > 0:
+        err_pct = len(tmp3) / est - 1
         assert np.abs(err_pct) < 0.02
-    di_img_point[idt]['lbls'] = tmp2
+    di_data[idt]['lbls'] = tmp2
     holder.append(err_pct)
     del tmp, tmp2, tmp3
+dat_err_pct = pd.DataFrame({'idt':ids_tissue, 'err':holder}).assign(err=lambda x: x.err.abs())
+dat_err_pct = dat_err_pct.sort_values('err',ascending=False).round(2).reset_index(None,True)
+print(dat_err_pct.head())
 
-# Get the mean number of cells
-pfac = 9  # Number of cells have been multiplied by 9 (basically)
-mu_pixels = np.mean([di_img_point[z]['lbls'].mean() for z in di_img_point])
-mu_cells = pd.concat([di_img_point[z]['pts'].cell.value_counts().reset_index().rename(columns={'index':'cell','cell':'n'}) for z in di_img_point])
-mu_cells = mu_cells[mu_cells.cell.isin(cells)].n.sum() / len(di_img_point)
-print('Error: %0.1f' % (mu_pixels * 501**2 / pfac - mu_cells))
+# --- (iii) Check image/label size concordance --- #
+dat_imsize = pd.DataFrame([di_data[idt]['lbls'].shape[:2] + di_data[idt]['img'].shape[:2] for idt in ids_tissue])
+n_pixels = dat_imsize.iloc[0,0]
+assert np.all(dat_imsize == n_pixels)
+
+# --- (iv) Get mean number of cells/pixels for intercept initialization --- #
+mu_pixels = np.mean([di_data[z]['lbls'].mean() for z in di_data])
+mu_cells = pd.concat([di_data[z]['pts'].cell.value_counts().reset_index().rename(columns={'index':'cell','cell':'n'}) for z in di_data])
+mu_cells = mu_cells[mu_cells.cell.isin(cells)].n.sum() / len(di_data)
+print('Error: %0.2f' % (mu_pixels * n_pixels**2 / fillfac - mu_cells))
 b0 = np.log(mu_pixels / (1 - mu_pixels))
 
-# Calculate distribution of cells types across images
-df_cells = pd.concat([di_img_point[idt]['pts'].cell.value_counts().reset_index().assign(id=idt) for idt in ids_tissue])
-df_cells = df_cells.pivot('id', 'index', 'cell').fillna(0).astype(int).reset_index()
-df_cells.to_csv(os.path.join(dir_output,'df_cells.csv'),index=False)
+
 num_cell = df_cells[cells].sum(1).astype(int)
 num_agg = df_cells.drop(columns=['id']).sum(1).astype(int)
 df_cells = pd.DataFrame({'id':df_cells.id,'num_cell':num_cell,'num_agg':num_agg})
@@ -147,7 +155,7 @@ print(df_cells)
 
 # Load the model
 torch.manual_seed(1234)
-mdl = UNet(n_channels=3, n_classes=1, bl=num_params, batchnorm=True)
+mdl = UNet(n_channels=3, n_classes=1, bl=np, batchnorm=True)
 mdl.to(device)
 # mdl.load_state_dict(torch.load(os.path.join(dir_ee,'mdl_1000.pt')))
 with torch.no_grad():
@@ -159,15 +167,15 @@ print('Are network parameters cuda?: %s' %
 # Binary loss
 criterion = torch.nn.BCEWithLogitsLoss()
 # Optimizer
-optimizer = torch.optim.Adagrad(params=mdl.parameters(), lr=learning_rate)
+optimizer = torch.optim.Adagrad(params=mdl.parameters(), lr=lr)
 
 tnow = time()
 # Loop through images and make sure they average number of cells equal
 mat = np.zeros([len(ids_tissue), 2])
 for ii, idt in enumerate(ids_tissue):
     print('ID-tissue %s (%i of %i)' % (idt, ii + 1, len(ids_tissue)))
-    tens = img2tensor(device)([di_img_point[idt]['img'],di_img_point[idt]['lbls']])[0]
-    tens = tens.reshape([1,3,501,501]) / 255
+    tens = img2tensor(device)([di_data[idt]['img'],di_data[idt]['lbls']])[0]
+    tens = tens.reshape([1,3,n_pixels,n_pixels]) / 255
     arr = torch2array(tens)
     with torch.no_grad():
         logits = mdl(tens)
@@ -175,7 +183,7 @@ for ii, idt in enumerate(ids_tissue):
         nc = torch.sigmoid(logits).cpu().sum().numpy()+0
         mat[ii] = [nc, ncl]
 print('Script took %i seconds' % (time() - tnow))
-print(mat.mean(axis=0)); print(mu_pixels*501**2); print(mu_cells); print(b0)
+print(mat.mean(axis=0)); print(mu_pixels*n_pixels**2); print(mu_cells); print(b0)
 torch.cuda.empty_cache()
 
 ################################
@@ -203,25 +211,25 @@ idt_train = df_cells.id[~df_cells.id.isin(idt_val)].to_list()
 print('%i training samples\n%i validation samples' % (len(idt_train), len(idt_val)))
 
 # Create datasetloader class
-train_params = {'batch_size': batch_size, 'shuffle': True}
-val_params = {'batch_size': batch_size,'shuffle': False}
-eval_params = {'batch_size': batch_size,'shuffle': True}
+train_params = {'batch': batch, 'shuffle': True}
+val_params = {'batch': batch,'shuffle': False}
+eval_params = {'batch': batch,'shuffle': True}
 
 multiclass = False
 
 # Traiing
 train_transform = transforms.Compose([randomRotate(tol=1e-4), randomFlip(),
                                       img2tensor(device)])
-train_data = CellCounterDataset(di=di_img_point, ids=idt_train, transform=train_transform,
+train_data = CellCounterDataset(di=di_data, ids=idt_train, transform=train_transform,
                                 multiclass=multiclass)
 train_gen = data.DataLoader(dataset=train_data,**train_params)
 # Validation
 val_transform = transforms.Compose([img2tensor(device)])
-val_data = CellCounterDataset(di=di_img_point, ids=idt_val, transform=val_transform,
+val_data = CellCounterDataset(di=di_data, ids=idt_val, transform=val_transform,
                               multiclass=multiclass)
 val_gen = data.DataLoader(dataset=val_data,**val_params)
 # Eval (all sample)
-eval_data = CellCounterDataset(di=di_img_point, ids=idt_train + idt_val,
+eval_data = CellCounterDataset(di=di_data, ids=idt_train + idt_val,
                                transform=val_transform, multiclass=multiclass)
 eval_gen = data.DataLoader(dataset=eval_data, **eval_params)
 
@@ -229,11 +237,11 @@ eval_gen = data.DataLoader(dataset=eval_data, **eval_params)
 tnow = time()
 # cn_loss = pd.Series(np.repeat(['train_train','train_eval','val_eval'],2))+'_'+pd.Series(np.tile(['r2','ce'],3))
 # print(cn_loss)
-# mat_loss = np.zeros([num_epochs, len(cn_loss)])
+# mat_loss = np.zeros([nepoch, len(cn_loss)])
 epoch_loss = []
 ee, ii = 0, 1
-for ee in range(num_epochs):
-    print('--------- EPOCH %i of %i ----------' % (ee+1, num_epochs))
+for ee in range(nepoch):
+    print('--------- EPOCH %i of %i ----------' % (ee+1, nepoch))
 
     ### --- MODEL TRAINING --- ###
     mdl.train()
@@ -262,8 +270,8 @@ for ee in range(num_epochs):
         torch.cuda.empty_cache()
         ii_pred_act = np.zeros([nbatch, 2])
         for kk in range(nbatch):
-            ii_pred_act[kk, 0] = ii_phat[kk].sum() / pfac
-            ii_pred_act[kk, 1] = di_img_point[ids_batch[kk]]['lbls'].sum() / pfac
+            ii_pred_act[kk, 0] = ii_phat[kk].sum() / fillfac
+            ii_pred_act[kk, 1] = di_data[ids_batch[kk]]['lbls'].sum() / fillfac
         lst_ce.append(ii_loss)
         lst_pred_act.append(ii_pred_act)
         lst_ids.append(ids_batch)
@@ -292,10 +300,10 @@ for ee in range(num_epochs):
             ce = t2n(criterion(input=mdl(imgs_batch), target=lbls_batch))
             logits = logits.transpose(2, 3, 1, 0)
             phat = sigmoid(logits)
-            gaussian = np.stack([di_img_point[ids]['lbls'].copy() for ids in ids_batch], 3)
+            gaussian = np.stack([di_data[ids]['lbls'].copy() for ids in ids_batch], 3)
             ids_seq = list(ids_batch)
-            pred_seq = phat.sum(0).sum(0).sum(0) / pfac
-            act_seq = gaussian.sum(0).sum(0).sum(0) / pfac
+            pred_seq = phat.sum(0).sum(0).sum(0) / fillfac
+            act_seq = gaussian.sum(0).sum(0).sum(0) / fillfac
             tmp = pd.DataFrame({'ids': ids_seq, 'pred': pred_seq, 'act': act_seq, 'ce':ce})
             holder_eval.append(tmp)
             # if (ee+1) % epoch_check == 0:
@@ -326,7 +334,7 @@ for ee in range(num_epochs):
 
     # Get run-time
     tdiff = time() - tnow
-    print('Epoch took %i seconds, ETA: %i seconds' % (tdiff, (num_epochs-ee-1)*tdiff) )
+    print('Epoch took %i seconds, ETA: %i seconds' % (tdiff, (nepoch-ee-1)*tdiff) )
     tnow = time()
 
     if (ee + 1) % epoch_check == 0:

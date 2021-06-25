@@ -16,8 +16,7 @@ print('nfill: %i, s2: %.1f, fillfac: x%i' % (nfill, s2, fillfac))
 
 # Load modules
 import os
-import shutil
-import pickle
+import hickle
 import numpy as np
 import pandas as pd
 from PIL import Image
@@ -72,8 +71,8 @@ if len(missing_points) > 0:
 # ids_tissue = dat_points.points.str.replace('cleaned\\_','',regex=True)
 
 # Storage
-di_img_point = dat_pimages.groupby('tt').apply(lambda x: dict(zip(x.fn,[[] for z in range(len(x.fn))])) )
-di_img_point = di_img_point.to_dict()
+di_data = dat_pimages.groupby('tt').apply(lambda x: dict(zip(x.fn,[[] for z in range(len(x.fn))])) )
+di_data = di_data.to_dict()
 
 tol = 2e-2
 holder = np.zeros([len(dat_pimages),2])
@@ -109,15 +108,30 @@ for ii, rr in dat_pimages.iterrows():
         dcell=lambda x: np.abs(x.act - x.est) )
     assert np.all((cell3.pct <= tol) | (cell3.dcell <= 1))
     # (iv) Save to dictionary
-    di_img_point[tt][idt] = {'pts':df_ii, 'img':img_vals, 'lbls':lbls}
+    di_data[tt][idt] = {'pts':df_ii, 'img':img_vals, 'lbls':lbls}
 
 # Check fillfac discrepancy
 err = pd.DataFrame(holder,columns=['act','est']).assign(pct=lambda x: np.abs(100*(x.est/x.act-1)))
 err.sort_values('pct',ascending=False).head()
 
 # Make sure all images exist
-assert all([[di_img_point[tt][idt]['img'].shape[0] > 0 for idt in di_img_point[tt]] for tt in di_img_point.keys()])
+assert all([[di_data[tt][idt]['img'].shape[0] > 0 for idt in di_data[tt]] for tt in di_data.keys()])
+
+##############################
+## --- (3) SAVE DATA --- ##
+
+# Calculate distribution of cells types across images
+holder = []
+for ds in di_data:
+    for idt in di_data[ds]:
+        holder.append(di_data[ds][idt]['pts'][['cell']].assign(idt=idt,ds=ds))
+df_cells = pd.concat(holder).pivot_table(index=['ds','idt'],columns='cell',aggfunc='size')
+df_cells = df_cells.fillna(0).astype(int).reset_index()
+df_cells.to_csv(os.path.join(dir_output,'df_cells.csv'),index=False)
 
 # Save for later
 print('--- Saving pickle file ---')
-pickle.dump(di_img_point, open(os.path.join(dir_output, 'di_img_point.pickle'), "wb"))
+for ds in di_data:
+    print(ds)
+    path_dump = os.path.join(dir_output, 'annot_' + ds + '.pickle')
+    hickle.dump(di_data[ds], path_dump, 'w')
