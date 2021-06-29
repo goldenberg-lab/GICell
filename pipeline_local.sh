@@ -30,16 +30,13 @@ python explore_data.py
 # output:   ~/output/figures/{}.png
 #           ~/output/train_val_test_ids.csv
 
-return
-
 echo "--- (6) TEST MODEL ---"
 pmax=8
-echo "Testing EOSINOPHIL"
+echo "Testing INFLAM"
 python -u run_mdl.py --is_inflam --nepoch 1 --p $pmax
 
-echo "Testing EOSINOPHIL"
+echo "Testing EOSIN"
 python -u run_mdl.py --is_eosin --nepoch 1 --p $pmax
-
 
 return
 
