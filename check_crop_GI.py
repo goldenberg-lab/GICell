@@ -37,7 +37,7 @@ for ii, rr in df_images.iterrows():
         if os.path.exists(path_tissue):
             # Remove -v2
             fn2 = pd.Series(fn).str.replace('[\\-|\\_]v2','',regex=True)
-            fn2 = fn2.str.replace(tissue,tish)[0]    
+            fn2 = fn2.str.replace(tissue,tish,regex=True)[0]    
             path_Ordinal = os.path.join(path_tissue, fn2)
             if os.path.exists(path_Ordinal):
                 # Check that files are the same

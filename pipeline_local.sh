@@ -24,13 +24,21 @@ python process_Xy.py --nfill $nfill --s2 $s2
 # output: ~output/di_img_point.pickle
 #         contains all images/annotation points?
 
-echo "--- (5) TEST MODEL ---"
+echo "--- (5) GENERATE SUMMARY STATS ---"
+# output will be used for model run
+python explore_data.py
+# output:   ~/output/figures/{}.png
+#           ~/output/train_val_test_ids.csv
+
+return
+
+echo "--- (6) TEST MODEL ---"
 pmax=8
 echo "Testing EOSINOPHIL"
-python -u script_mdl_cell.py --is_inflam --nepoch 1 --p $pmax
+python -u run_mdl.py --is_inflam --nepoch 1 --p $pmax
 
 echo "Testing EOSINOPHIL"
-python -u script_mdl_cell.py --is_eosin --nepoch 1 $pmax
+python -u run_mdl.py --is_eosin --nepoch 1 --p $pmax
 
 
 return

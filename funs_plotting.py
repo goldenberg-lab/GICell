@@ -17,6 +17,13 @@ def gg_color_hue(n):
         hcl.append(HCL(H=h, L=65, C=100).colors()[0])
     return hcl
 
+# --- FUNCTION TO OVERWRITE EXISTING GGPLOTS --- #
+def gg_save(fn,fold,gg,width,height):
+    path = os.path.join(fold, fn)
+    if os.path.exists(path):
+        os.remove(path)
+    gg.save(path, width=width, height=height)
+
 
 # --- PRODUCE PLOT WITH IMAGES AND ANNOTATION POINTS --- #
 """

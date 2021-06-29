@@ -74,8 +74,9 @@ if len(missing_points) > 0:
 di_data = dat_pimages.groupby('tt').apply(lambda x: dict(zip(x.fn,[[] for z in range(len(x.fn))])) )
 di_data = di_data.to_dict()
 
+cn_ord = ['ds','idt_tissue','cell','y','x']
 tol = 2e-2
-holder = np.zeros([len(dat_pimages),2])
+holder_err, holder_df = np.zeros([len(dat_pimages),2]), []
 for ii, rr in dat_pimages.iterrows():
     tt, points, images, fn = rr['tt'], rr['points'], rr['images'], rr['fn']
     idt = fn.replace('cleaned_', '')
@@ -87,6 +88,8 @@ for ii, rr in dat_pimages.iterrows():
     # (i) Load points and images
     path_points = os.path.join(dir_p, points)
     df_ii = zip_points_parse(path_points, dir_base, valid_cells)
+    df_ii = df_ii.assign(idt_tissue=idt, ds=tt)[cn_ord]
+    holder_df.append(df_ii)
     path_images = os.path.join(dir_im, images)
     img_vals = np.array(Image.open(path_images))
 
@@ -97,7 +100,7 @@ for ii, rr in dat_pimages.iterrows():
                       shape=img_vals.shape[0:2], fill=nfill, s2=s2)
     est, true = np.sum(lbls) / fillfac, len(idx_xy)
     assert np.abs(est / true - 1) <= tol
-    holder[ii] = [true, est]
+    holder_err[ii] = [true, est]
     # from funs_plotting import plt_single
     # plt_single(fn='test.png',folder=dir_output,arr=img_vals,pts=lbls,thresh=1e-1)
     
@@ -108,28 +111,29 @@ for ii, rr in dat_pimages.iterrows():
         dcell=lambda x: np.abs(x.act - x.est) )
     assert np.all((cell3.pct <= tol) | (cell3.dcell <= 1))
     # (iv) Save to dictionary
-    di_data[tt][idt] = {'pts':df_ii, 'img':img_vals, 'lbls':lbls}
+    di_data[tt][idt] = {'img':img_vals, 'lbls':lbls}
 
 # Check fillfac discrepancy
-err = pd.DataFrame(holder,columns=['act','est']).assign(pct=lambda x: np.abs(100*(x.est/x.act-1)))
+err = pd.DataFrame(holder_err,columns=['act','est']).assign(pct=lambda x: np.abs(100*(x.est/x.act-1)))
 err.sort_values('pct',ascending=False).head()
+
+# Merge the pts
+df_pts = pd.concat(holder_df).reset_index(None, True)
 
 # Make sure all images exist
 assert all([[di_data[tt][idt]['img'].shape[0] > 0 for idt in di_data[tt]] for tt in di_data.keys()])
 
-##############################
+###########################
 ## --- (3) SAVE DATA --- ##
 
-# Calculate distribution of cells types across images
-holder = []
-for ds in di_data:
-    for idt in di_data[ds]:
-        holder.append(di_data[ds][idt]['pts'][['cell']].assign(idt=idt,ds=ds))
-df_cells = pd.concat(holder).pivot_table(index=['ds','idt'],columns='cell',aggfunc='size')
+# --- (i) Save the location information as pandas dataframe --- #
+df_cells = df_pts.pivot_table(index=['ds','idt_tissue'],columns='cell',aggfunc='size')
 df_cells = df_cells.fillna(0).astype(int).reset_index()
 df_cells.to_csv(os.path.join(dir_output,'df_cells.csv'),index=False)
+# Save the original location data
+df_pts.to_csv(os.path.join(dir_output,'df_pts.csv'),index=False)
 
-# Save for later
+# --- (ii) Serialize the numpy arrays --- #
 print('--- Saving pickle file ---')
 for ds in di_data:
     print(ds)
