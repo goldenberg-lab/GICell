@@ -1,23 +1,16 @@
 #!/bin/bash
 
-# scripts to be run on GPU machines
+# scripts to be run on GPU machines without hangup
 
-# ------ (2) Train models ------ #
+dir_code=/home/erik/Documents/projects/GI/GICell/code
+cd $dir_code
 
-nohup sh pipeline_nohup.sh > ../cell.log 2>&1 &
+echo " ------ (1) UNet Hyperparameters ------ "
+dir_nohup=/data/GICell/output/nohup
+log_file=$(date | awk '{gsub(/ /,"_")}1')
+log_file=$log_file".log"
 
-# ------ (3) Hyperparameter select ------ #
+nohup ./pipeline_unet_hp.sh > $dir_nohup/$log_file 2>&1 &
 
-python script_hyperparameter.py  # ~/output/df_hp_perf.csv
-python script_tensorboard.py  # Creates figures
 
-# ------ (4) Full image inference ------ #
-
-# Run on GPU with at least 11G
-for ii in {0..188..1}; do
-  echo "Image: "$ii
-  python script_fullimg.py --ridx $ii --kk 2500
-done
-
-# Merge the slices
-python script_merge_slices.py
+echo "end of pipeline_nohup.sh"

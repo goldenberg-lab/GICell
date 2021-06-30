@@ -235,7 +235,7 @@ print('Initial AUC: %.1f%%' % (100*global_auroc(Ybin_val, Phat_init)))
 ##########################
 ## --- (4) TRAINING --- ##
 
-tnow, ee, ii = time(), 0, 1
+stime, ee, ii = time(), 0, 1
 holder_ce_auc, holder_pr = [], []
 for ee in range(nepoch):
     print('--------- EPOCH %i of %i ----------' % (ee+1, nepoch))
@@ -285,6 +285,12 @@ for ee in range(nepoch):
     # Save
     holder_ce_auc.append(tmp_ce_auc)
     holder_pr.append(pr_val)
+    # Calculate the ETA
+    dsec, nleft = time() - stime, nepoch - (ee + 1)
+    rate = (ee + 1) / dsec
+    seta = nleft / rate
+    meta = seta / 60
+    print('--- ETA: %.1f minutes (%i of %i) ---' % (meta, ee+1, nepoch))
 
 
 #########################
