@@ -38,6 +38,11 @@ python -u run_mdl.py --is_inflam --nepoch 1 --p $pmax
 echo "Testing EOSIN"
 python -u run_mdl.py --is_eosin --nepoch 1 --p $pmax
 
+echo "--- (7) HP SEARCH ---"
+
+# Call pipeline nohup on appropriate machine
+python -u explore_hp.py
+
 return
 
 # # Set folders

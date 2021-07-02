@@ -28,6 +28,25 @@ def find_dir_cell():
         sys.exit('Where are we?!')
     return dir_cell
 
+
+
+# ---- Index come column of df (cn_val) to smallest point (cn_idx) --- #
+def idx_first(df, cn_gg, cn_idx, cn_val):
+  if isinstance(cn_gg, str):
+    cn_gg = [cn_gg]
+  assert isinstance(cn_idx, str)
+  assert isinstance(cn_val, str)
+  df = df.copy()
+  cn_val_min = cn_val + '_mi'
+  idx_min = df.groupby(cn_gg).apply(lambda x: x[cn_idx].idxmin())
+  idx_min = idx_min.reset_index().rename(columns={0:'idx'})
+  val_min = df.loc[idx_min.idx,cn_gg + [cn_val]]
+  val_min.rename(columns={cn_val:cn_val_min}, inplace=True)
+  df = df.merge(val_min,'left',cn_gg)
+  df = df.assign(val_idx = lambda x: x[cn_val]/x[cn_val_min]*100).drop(columns=[cn_val_min])
+  df = df.drop(columns=cn_val).rename(columns={'val_idx':cn_val})
+  return df
+
 def cvec(z):
     return np.atleast_2d(z).T
 
