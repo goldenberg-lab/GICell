@@ -24,6 +24,9 @@ def find_dir_cell():
     elif cpu == 'snowqueen':
         print('On snowqueen machine')
         dir_cell = '/data/GICell'
+    elif cpu == 'cavansite':
+        print('On cavansite')
+        dir_cell = '/data/erik/GICell/'
     else:
         sys.exit('Where are we?!')
     return dir_cell

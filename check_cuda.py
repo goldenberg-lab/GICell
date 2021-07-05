@@ -5,6 +5,7 @@ import torch.nn as nn
 use_cuda = torch.cuda.is_available()
 if use_cuda:
     print('CUDA IS AVAILABLE, SETTING DEVICE')
+    print('# of CUDA devices: %i' % torch.cuda.device_count())
 else:
     print('CUDA IS NOT AVAILABLE, USING CPU')
 device = torch.device("cuda" if use_cuda else "cpu")

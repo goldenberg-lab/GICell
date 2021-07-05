@@ -5,7 +5,7 @@ parser.add_argument('--save_model', dest='save_model', action='store_true', help
 parser.add_argument('--is_eosin', dest='is_eosin', action='store_true', help='Eosinophil cell only')
 parser.add_argument('--is_inflam', dest='is_inflam', action='store_true', help='Eosinophil + neutrophil + plasma + lymphocyte')
 parser.set_defaults(is_eosin=False, is_inflam=False)
-parser.add_argument('--nepoch', type=int, default=1000, help='Number of epochs')
+parser.add_argument('--nepoch', type=int, default=110, help='Number of epochs')
 parser.add_argument('--batch', type=int, default=1, help='Batch size')
 parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
 parser.add_argument('--p', type=int, default=8, help='Number of initial params for NNet')
@@ -52,23 +52,24 @@ from funs_support import sigmoid, find_dir_cell, makeifnot
 from funs_plotting import gg_save
 from funs_stats import get_YP, cross_entropy, global_auprc, global_auroc
 from time import time
-import torch
+import plotnine as pn
+
 from mdls.unet import UNet
-from datetime import datetime
+import torch
 from funs_torch import CellCounterDataset, img2tensor, randomRotate, randomFlip
 from torchvision import transforms
 from torch.utils import data
-import plotnine as pn
+from torch.nn import DataParallel
 
 use_cuda = torch.cuda.is_available()
 if use_cuda:
     print('CUDA IS AVAILABLE, SETTING DEVICE')
+    n_cuda = torch.cuda.device_count()
+    cuda_index = list(range(n_cuda))
 else:
     print('CUDA IS NOT AVAILABLE, USING CPU')
-device = torch.device('cuda' if use_cuda else 'cpu')
-
-# Get current day
-dnow = datetime.now().strftime('%Y_%m_%d')
+    n_cuda, cuda_index = None, None
+device = torch.device('cuda:0' if use_cuda else 'cpu')
 
 # Set up folders
 dir_base = find_dir_cell()
@@ -165,9 +166,13 @@ np.random.seed(seednum)
 
 # Load the model
 mdl = UNet(n_channels=3, n_classes=1, bl=p, batchnorm=True)
-mdl.to(device)
 with torch.no_grad():
     mdl.outc.conv.bias.fill_(b0)
+# Enable data parallelism if possible
+if n_cuda is not None:
+    if n_cuda > 1:
+        mdl = DataParallel(mdl)
+mdl.to(device)
 # Check CUDA status for model
 print('Are network parameters cuda?: %s' %
       all([z.is_cuda for z in mdl.parameters()]))
@@ -237,9 +242,11 @@ assert np.all(gt1 == gt2)
 Phat_init = sigmoid(get_YP(val_gen, mdl, n_pixels, n_pixels, ret_Y=False, ret_P=True))
 print('Initial AUC: %.1f%%' % (100*global_auroc(Ybin_val, Phat_init)))
 
-
 ##########################
 ## --- (4) TRAINING --- ##
+
+b_check = (len(train_gen) + 1) // 5
+
 
 stime, ee, ii = time(), 0, 1
 holder_ce_auc, holder_pr = [], []
@@ -271,7 +278,7 @@ for ee in range(nepoch):
         del lbls_batch, imgs_batch
         lst_ce.append(ii_loss)
         lst_ids.append(ids_batch)
-        if (ii + 1) % 25 == 0:
+        if (ii + 1) % b_check == 0:
             print('Batch %i of %i: %s' % (ii+1, len(train_gen), ', '.join(ids_batch)))
             print('Cross-entropy loss: %0.6f' % ii_loss)
     ce_train = np.mean(lst_ce)
