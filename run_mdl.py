@@ -1,6 +1,7 @@
 import argparse
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--save_model', dest='save_model', action='store_true', help='Save model as .pt file')
 parser.add_argument('--is_eosin', dest='is_eosin', action='store_true', help='Eosinophil cell only')
 parser.add_argument('--is_inflam', dest='is_inflam', action='store_true', help='Eosinophil + neutrophil + plasma + lymphocyte')
 parser.set_defaults(is_eosin=False, is_inflam=False)
@@ -10,11 +11,16 @@ parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
 parser.add_argument('--p', type=int, default=8, help='Number of initial params for NNet')
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
 args = parser.parse_args()
-is_eosin, is_inflam = args.is_eosin, args.is_inflam
+save_model, is_eosin, is_inflam = args.save_model, args.is_eosin, args.is_inflam
 nepoch, batch, lr, p, nfill = args.nepoch, args.batch, args.lr, args.p, args.nfill
 
+if save_model:
+    print('!!! WARNING --- MODEL WILL BE SAVED !!!')
+else:
+    print('~~~ model with NOT be saved ~~~')
+
 # # for debugging
-# is_eosin, is_inflam, nfill = False, True, 1
+# save_model, is_eosin, is_inflam, nfill = True, False, True, 1
 # lr, p, nepoch, epoch_check, batch = 1e-3, 16, 2, 1, 2
 
 # Needs to be mutually exlusive
@@ -26,7 +32,7 @@ else:
 
 cell_fold = 'inflam' if is_inflam else 'eosin'
 
-print('Cells: %s\nnepoch: %i\nbatch: %i\nlr: %0.3f, np: %i' % (cells, nepoch, batch, lr, p))
+print('Cells: %s\nnepoch: %i\nbatch: %i\nlr: %0.3f, p: %i' % (cells, nepoch, batch, lr, p))
 
 # number of padded points (i.e. count inflator)
 fillfac = (2 * nfill + 1) ** 2
@@ -306,8 +312,11 @@ df_slice = df_slice.loc[0].reset_index().rename(columns={'index':'hp',0:'val'})
 hp_string = pd.Series([df_slice.apply(lambda x: x[0] + '=' + str(x[1]), 1).str.cat(sep='_')])
 code_hash = pd.util.hash_array(hp_string)[0]
 
-# Pickle the dictionary and save
+# Pickle the dictionary
 di = {'hp':df_slice, 'ce_auc':dat_ce_auc, 'pr':dat_pr}
+if save_model:
+    di['mdl'] = mdl
+
 path_di = os.path.join(dir_cell, str(code_hash) + '.pkl')
 with open(path_di, 'wb') as handle:
     pickle.dump(di, handle, protocol=pickle.HIGHEST_PROTOCOL)

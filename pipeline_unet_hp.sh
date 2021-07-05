@@ -22,7 +22,7 @@ for lr in $lr_seq; do
     for p in $p_seq; do
       jj=$((jj+1))
       echo "##### ITERATION: "$jj" #####"
-      echo "learning rate: "$lr", batch-size: "$bs", # params: "$np
+      echo "learning rate: "$lr", batch-size: "$bs", # params: "$p
       echo "--- Cell type: INFLAMMATORY ---"
       python -u run_mdl.py --is_inflam --nepoch $nepoch --batch $bs --lr $lr --p $p
 
