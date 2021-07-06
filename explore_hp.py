@@ -1,10 +1,13 @@
+# Script to find best hyperparameters in terms of AUROC, CE, AUPRC
+
 import os
 import pickle
 import pandas as pd
 import numpy as np
 import plotnine as p9
-from funs_support import find_dir_cell, idx_first
+from funs_support import find_dir_cell
 from funs_plotting import gg_save
+import gc
 
 # Set up folders
 dir_base = find_dir_cell()
@@ -37,6 +40,7 @@ for tt in ['eosin','inflam']:
     fn_tt = os.listdir(dir_tt)
     for fn in fn_tt:
         path_fn = os.path.join(dir_tt, fn)
+        print(fn)
         with open(path_fn, 'rb') as handle:
             di = pickle.load(handle)
         # Extract the hyperparamets
@@ -47,9 +51,15 @@ for tt in ['eosin','inflam']:
         # assign and save
         holder_ce.append(di['ce_auc'].assign(cell=tt, lr=lr, p=p, batch=batch))
         holder_pr.append(di['pr'].assign(cell=tt, lr=lr, p=p, batch=batch))
+        del di
+gc.collect()
 # Merge
 dat_ce = pd.concat(holder_ce).melt(['cell','epoch']+cn_hp,None,'metric')
 dat_pr = pd.concat(holder_pr).melt(['cell','epoch','thresh']+cn_hp,None,'metric')
+# Save for analysis later
+dat_ce.to_csv(os.path.join(dir_output, 'dat_hp_ce.csv'),index=False)
+dat_pr.to_csv(os.path.join(dir_output, 'dat_hp_pr.csv'),index=False)
+
 # # Assign total hp
 # dat_ce.insert(0,'hp', hp_2_str(dat_ce, cn_hp))
 # dat_pr.insert(0,'hp', hp_2_str(dat_pr, cn_hp))

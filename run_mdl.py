@@ -2,6 +2,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--save_model', dest='save_model', action='store_true', help='Save model as .pt file')
+parser.add_argument('--check_model', dest='check_model', action='store_true', help='Stop model after one epoch')
 parser.add_argument('--is_eosin', dest='is_eosin', action='store_true', help='Eosinophil cell only')
 parser.add_argument('--is_inflam', dest='is_inflam', action='store_true', help='Eosinophil + neutrophil + plasma + lymphocyte')
 parser.set_defaults(is_eosin=False, is_inflam=False)
@@ -11,7 +12,8 @@ parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
 parser.add_argument('--p', type=int, default=8, help='Number of initial params for NNet')
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
 args = parser.parse_args()
-save_model, is_eosin, is_inflam = args.save_model, args.is_eosin, args.is_inflam
+save_model, check_model = args.save_model, args.check_model
+is_eosin, is_inflam = args.is_eosin, args.is_inflam
 nepoch, batch, lr, p, nfill = args.nepoch, args.batch, args.lr, args.p, args.nfill
 
 if save_model:
@@ -19,16 +21,22 @@ if save_model:
 else:
     print('~~~ model with NOT be saved ~~~')
 
+if check_model:
+    print('---- Script will terminate after one epoch ----')
+    nepoch = 1
+
 # # for debugging
-# save_model, is_eosin, is_inflam, nfill = True, False, True, 1
-# lr, p, nepoch, epoch_check, batch = 1e-3, 16, 2, 1, 2
+# save_model, check_model, is_eosin, is_inflam, nfill = True, True, False, True, 1
+# lr, p, nepoch, batch = 1e-3, 16, 1, 2
+
+from cells import valid_cells, inflam_cells
 
 # Needs to be mutually exlusive
 assert is_eosin != is_inflam
 if is_eosin:
     cells = ['eosinophil']
 else:
-    cells = ['eosinophil','neutrophil','plasma','lymphocyte']
+    cells = inflam_cells
 
 cell_fold = 'inflam' if is_inflam else 'eosin'
 
@@ -42,17 +50,17 @@ max_channels = p*2**4
 print('Baseline: %i, maximum number of channels: %i' % (p, max_channels))
 
 import os
-import pickle
-import hickle
+import sys
 import gc
-import numpy as np
+import hickle
 import random
+import numpy as np
 import pandas as pd
-from funs_support import sigmoid, find_dir_cell, makeifnot
-from funs_plotting import gg_save
-from funs_stats import get_YP, cross_entropy, global_auprc, global_auroc
 from time import time
 import plotnine as pn
+from funs_support import sigmoid, find_dir_cell, makeifnot, hash_hp, write_pickle
+from funs_plotting import gg_save
+from funs_stats import get_YP, cross_entropy, global_auprc, global_auroc
 
 from mdls.unet import UNet
 import torch
@@ -83,9 +91,6 @@ dir_cell = os.path.join(dir_checkpoint, cell_fold)
 lst_newdir = [dir_checkpoint, dir_cell]
 for dir in lst_newdir:
     makeifnot(dir)
-
-# Order of valid_cells matters (see idx_cells & label_blur)
-valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
 
 # Image parameters
 n_channels = 3
@@ -190,7 +195,9 @@ for ii, idt in enumerate(idt_tissue):
     if (ii + 1) % 25 == 0:
         print('ID-tissue %s (%i of %i)' % (idt, ii + 1, len(idt_tissue)))
     tens = img2tensor(device)([di_data[idt]['img'],di_data[idt]['lbls']])[0]
-    tens = tens.reshape([1, n_channels, n_pixels, n_pixels]) / pixel_max
+    # First channel should be batch size
+    tens = torch.unsqueeze(tens, dim=0) / pixel_max
+    # tens = tens.reshape([1, n_channels, n_pixels, n_pixels]) / pixel_max
     with torch.no_grad():
         logits = mdl(tens)
         ncl = logits.cpu().mean().numpy()+0
@@ -315,15 +322,16 @@ dat_pr = pd.concat(holder_pr).reset_index(None, True)
 
 # Hash all hyperparameters
 df_slice = pd.DataFrame({'lr':lr, 'p':p, 'batch':batch},index=[0])
-df_slice = df_slice.loc[0].reset_index().rename(columns={'index':'hp',0:'val'})
-hp_string = pd.Series([df_slice.apply(lambda x: x[0] + '=' + str(x[1]), 1).str.cat(sep='_')])
-code_hash = pd.util.hash_array(hp_string)[0]
+code_hash = hash_hp(df_slice, method='hash_array')
 
 # Pickle the dictionary
 di = {'hp':df_slice, 'ce_auc':dat_ce_auc, 'pr':dat_pr}
+
+if check_model:
+    sys.exit('check_model exit')
+
 if save_model:
     di['mdl'] = mdl
 
 path_di = os.path.join(dir_cell, str(code_hash) + '.pkl')
-with open(path_di, 'wb') as handle:
-    pickle.dump(di, handle, protocol=pickle.HIGHEST_PROTOCOL)
+write_pickle(di, path_di)

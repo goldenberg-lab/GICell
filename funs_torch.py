@@ -60,11 +60,9 @@ class randomRotate(object):
             k = self.k
         else:
             k = np.random.randint(4)  # Number of rotations, k==0 is fixed
-        angle = k * 90
-        # print('Angle: %i' % angle)
-        if angle > 0:
-            imgs = rotate(imgs, angle, mode='mirror', reshape=False)
-            lbls = rotate(lbls, angle, mode='mirror', reshape=False)
+        if k > 0:
+            imgs = np.rot90(m=imgs,axes=(0,1),k=k)
+            lbls = np.rot90(m=lbls,axes=(0,1),k=k)
             lbls = np.where(lbls <= self.tol, 0, lbls)
         return [imgs, lbls]
 

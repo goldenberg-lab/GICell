@@ -22,7 +22,7 @@ import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from PIL import Image
-
+from cells import valid_cells
 from funs_support import stopifnot, zip_points_parse, find_dir_cell
 
 dir_base = find_dir_cell()
@@ -33,9 +33,6 @@ dir_output = os.path.join(dir_base, 'output')
 if not os.path.exists(dir_output):
     print('output directory does not exist, creating')
     os.mkdir(dir_output)
-
-valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
-# ratio1: eosonphil / everything
 
 ##################################
 ## --- (1) LOAD IN THE DATA --- ##

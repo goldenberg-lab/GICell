@@ -23,7 +23,8 @@ from PIL import Image
 
 import warnings
 warnings.filterwarnings( "ignore", module = "matplotlib\..*" )
-from funs_support import stopifnot, zip_points_parse, label_blur, find_dir_cell, makeifnot
+from funs_support import zip_points_parse, label_blur, find_dir_cell, makeifnot
+from cells import valid_cells
 
 # Set directories
 dir_base = find_dir_cell()
@@ -36,8 +37,6 @@ dir_output = os.path.join(dir_base, 'output')
 assert all([os.path.exists(ff) for ff in [dir_images, dir_points, dir_images_val, dir_points_val]])
 # If first run output folders may not exist
 makeifnot(dir_output)
-# Set cell list
-valid_cells = ['eosinophil', 'neutrophil', 'plasma','enterocyte', 'other', 'lymphocyte']
 
 ############################
 ## --- (1) CHECK DATA --- ##

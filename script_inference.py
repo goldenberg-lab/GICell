@@ -14,7 +14,7 @@ from torchvision import transforms
 from torch.utils import data
 from sklearn.metrics import r2_score
 from funs_torch import randomRotate, randomFlip, CellCounterDataset, img2tensor
-from funs_unet import find_bl_UNet
+from mdls.unet import find_bl_UNet
 from scipy.stats import kruskal
 from scipy import stats
 
@@ -49,6 +49,10 @@ dir_save = os.path.join(dir_inference, dnew)
 makeifnot(dir_save)
 dir_anno = os.path.join(dir_save, 'anno')
 makeifnot(dir_anno)
+
+# Load the specific cell order
+from cells import valid_cells, inflam_cells
+
 
 ############################################
 ## --- (1) LOAD DATA THE PRED VS ACT  --- ##
@@ -220,10 +224,6 @@ print(np.round(pval, 3))
 
 #################################################
 ## --- (4) LOAD THE GROUND TRUTH + MODELS  --- ##
-
-# cell order in the lbls matrix
-valid_cells = ['eosinophil', 'neutrophil', 'plasma', 'enterocyte', 'other', 'lymphocyte']
-inflam_cells = ['eosinophil', 'neutrophil', 'plasma', 'lymphocyte']
 
 # Load data
 di_img_point = pickle.load(open(os.path.join(dir_output, 'di_img_point.pickle'), 'rb'))

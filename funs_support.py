@@ -1,4 +1,8 @@
-import sys, os, shutil, itertools
+import sys
+import os
+import shutil
+import itertools
+import pickle
 import pandas as pd
 import numpy as np
 from zipfile import ZipFile
@@ -31,7 +35,31 @@ def find_dir_cell():
         sys.exit('Where are we?!')
     return dir_cell
 
+# ---- CONVERT THE 3 HYPERPARAMETERS INTO HASH ---- #
+# NOTE: returns an int
+def hash_hp(df, method='hash_array'):
+    cn_hp = ['lr', 'p', 'batch']
+    assert hasattr(pd.util, method)
+    fun = getattr(pd.util, method)
+    assert isinstance(df, pd.DataFrame)
+    assert df.columns.isin(cn_hp).sum() == len(cn_hp)
+    assert len(df) == 1
+    df = df[cn_hp].copy().reset_index(None,True)
+    df = df.loc[0].reset_index().rename(columns={'index':'hp',0:'val'})
+    hp_string = pd.Series([df.apply(lambda x: x[0] + '=' + str(x[1]), 1).str.cat(sep='_')])
+    code_hash = fun(hp_string)[0]
+    return code_hash
 
+# ---- FUNCTIONS TO READ/WRITE PICKLES ---- #
+def read_pickle(path):
+    assert os.path.exists(path)
+    with open(path, 'rb') as handle:
+        di = pickle.load(handle)
+    return di
+
+def write_pickle(di, path):
+    with open(path, 'wb') as handle:
+        pickle.dump(di, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 # ---- Index come column of df (cn_val) to smallest point (cn_idx) --- #
 def idx_first(df, cn_gg, cn_idx, cn_val):
@@ -49,6 +77,10 @@ def idx_first(df, cn_gg, cn_idx, cn_val):
   df = df.assign(val_idx = lambda x: x[cn_val]/x[cn_val_min]*100).drop(columns=[cn_val_min])
   df = df.drop(columns=cn_val).rename(columns={'val_idx':cn_val})
   return df
+
+
+def no_diff(x, y):
+    return set(x) == set(y)
 
 def cvec(z):
     return np.atleast_2d(z).T
