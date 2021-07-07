@@ -1,6 +1,11 @@
 # Script to analyze performance of model on test set with both pixel-wise and clustered performance
 
 import argparse
+from plotnine.facets.facet_wrap import facet_wrap
+from plotnine.positions.position_dodge import position_dodge
+
+from plotnine.scales.scale_color import scale_color_datetime
+from plotnine.themes.elements import element_text
 parser = argparse.ArgumentParser()
 parser.add_argument('--mdl_hash', type=str, help='How many points to pad around pixel annotation point')
 args = parser.parse_args()
@@ -18,9 +23,11 @@ import os
 import numpy as np
 import pandas as pd
 import hickle
+from time import time
 from funs_support import find_dir_cell, hash_hp, makeifnot, read_pickle, no_diff, t2n, sigmoid
 from cells import valid_cells, inflam_cells
 from funs_stats import global_auroc
+import plotnine as pn
 
 
 dir_base = find_dir_cell()
@@ -33,15 +40,20 @@ dir_checkpoint = os.path.join(dir_output, 'checkpoint')
 idx_eosin = np.where(pd.Series(valid_cells).isin(['eosinophil']))[0]
 idx_inflam = np.where(pd.Series(valid_cells).isin(inflam_cells))[0]
 di_idx = {'eosin':idx_eosin, 'inflam':idx_inflam}
+di_cell = {'eosin':'Eosinophil', 'inflam':'Inflammatory'}
 
 import torch
-from funs_torch import img2tensor, randomFlip, randomRotate
+from funs_torch import img2tensor, all_img_flips
+from funs_plotting import gg_save
 
 use_cuda = torch.cuda.is_available()
 device = torch.device('cuda:0' if use_cuda else 'cpu')
 
 pixel_max = 255        
 
+img_trans = img2tensor(device)
+
+dtype = np.float32
 
 ############################
 ## --- (1) LOAD MODEL --- ##
@@ -75,6 +87,7 @@ print('lr = %.3f, p = %i, batch = %i' % (lr, p, batch))
 # Drop the hp and keep only model
 di_mdl = {k: v['mdl'] for k, v in di_mdl.items()}
 di_mdl = {k: v.eval() for k, v in di_mdl.items()}
+di_mdl = {k: v.double() for k, v in di_mdl.items()}
 # Models should be eval mode
 assert all([not k.training for k in di_mdl.values()])
 
@@ -105,13 +118,81 @@ df_tt = pd.concat([tmp1, tmp2], axis=0).reset_index(None, True)
 print(df_tt.groupby('ds').is_zero.mean())
 
 #######################################
-## --- (3.A) INFERENCE STABILITY --- ##
+## --- (3) INFERENCE STABILITY --- ##
+
+stime = time()
+holder = []
+for ii , rr in df_tt.iterrows():
+    ds, idt_tissue, tt = rr['ds'], rr['idt_tissue'], rr['tt']
+    print('Row %i of %i' % (ii+1, len(df_tt)))
+    # Load image/lbls
+    img_ii = di_data[ds][idt_tissue]['img'].copy().astype(int)
+    lbls_ii = di_data[ds][idt_tissue]['lbls'].copy().astype(float)
+    assert img_ii.shape[:2] == lbls_ii.shape[:2]
+    holder_cell = []
+    # break
+    for cell in cells:
+        print('~~~~ cell = %s ~~~~' % cell)
+        cell_ii = np.atleast_3d(lbls_ii[:,:,di_idx[cell]].sum(2))
+        cell_ii_bin = np.squeeze(np.where(cell_ii > 0, 1, 0))
+        # Get all rotations
+        enc_all = all_img_flips(img_lbl=[img_ii, cell_ii], enc_tens=img_trans)
+        enc_all.apply_flips()
+        enc_all.enc2tensor()
+        # To make sure GPU doesn't go over call in each batch
+        holder_logits = torch.zeros(enc_all.lbl_tens.shape)
+        for k in range(enc_all.ktot):
+            tmp_img = enc_all.img_tens[[k],:,:,:] / 255
+            with torch.no_grad():
+                tmp_logits = di_mdl[cell](tmp_img)
+            holder_logits[k, :, :, :] = tmp_logits
+            torch.cuda.empty_cache()
+        holder_sigmoid = sigmoid(t2n(holder_logits))
+        holder_Y = np.where(t2n(enc_all.lbl_tens)>0,1,0)
+        tmp_auc = [global_auroc(holder_Y[k,:,:,:], holder_sigmoid[k,:,:,:]) for k in range(enc_all.ktot)]
+        tmp_df = enc_all.k_df.assign(auc=tmp_auc,cell=cell)
+        # Reverse labels
+        lst_img_lbl = img_trans.tensor2array([enc_all.img_tens, holder_logits])
+        u_img, u_logits = enc_all.reverse_flips(img_lbl = lst_img_lbl)
+        np.all(np.expand_dims(img_ii,3) == u_img)
+        u_sigmoid = sigmoid(u_logits)
+        mu_sigmoid = np.squeeze(np.apply_over_axes(np.mean, u_sigmoid, 3))
+        mu_auc = global_auroc(cell_ii_bin, mu_sigmoid)
+        tmp_df = tmp_df.append(pd.DataFrame({'rotate':-1,'flip':-1,'auc':mu_auc,'cell':cell},index=[0]))
+        holder_cell.append(tmp_df)
+    # Merge
+    res_cell = pd.concat(holder_cell)
+    res_cell = res_cell.assign(ds=ds, idt_tissue=idt_tissue, tt=tt)
+    holder.append(res_cell)
+    dtime = time() - stime
+    nleft, rate = len(df_tt) - (ii+1), (ii+1) / dtime
+    meta = (nleft / rate) / 60
+    print('ETA: %.1f minutes, %.1f hours (%i of %i)' % (meta, meta/60, ii+1, len(df_tt)))
+# Merge and save
+inf_stab = pd.concat(holder).reset_index(None,True)
+inf_stab.to_csv(os.path.join(dir_checkpoint, 'inf_stab.csv'),index=False)
+
+# Plot it
+tmp = inf_stab.assign(xlab=lambda x: 'r='+x.rotate.astype(str)+',f='+x.flip.astype(str))
+tmp = tmp.assign(xlab=lambda x: np.where(x.rotate==-1,'mean',x.xlab))
+tmp.drop(columns=['rotate','flip','ds'],inplace=True)
+
+posd = pn.position_dodge(0.5)
+gg_inf_stab = (pn.ggplot(tmp, pn.aes(x='xlab',y='auc',color='tt')) + 
+    pn.theme_bw() + pn.geom_boxplot(position=posd) + 
+    pn.facet_wrap('~cell',ncol=1,labeller=pn.labeller(cell=di_cell)) + 
+    pn.labs(x='Rotate/Flip',y='AUROC',title='Pixel-wise') + 
+    pn.scale_color_discrete(name='Type') + 
+    pn.theme(axis_text_x=pn.element_text(angle=90)))
+gg_save('gg_inf_stab.png', dir_figures, gg_inf_stab, 8, 8)
 
 
+      
 ######################################
-## --- (3) PIXEL-WISE INFERENCE --- ##
+## --- (4) PIXEL-WISE INFERENCE --- ##
 
-
+# (i) Plot figures
+# (ii) Precision/recall
 
 
 
@@ -123,7 +204,6 @@ assert h_pixel == w_pixel
 arr_holder = np.zeros([len(df_tt), h_pixel, w_pixel])
 
 
-img_trans = img2tensor(device)
 
 
 

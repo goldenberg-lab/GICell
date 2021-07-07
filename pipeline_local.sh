@@ -7,26 +7,29 @@ nfill=1
 s2=2
 
 echo "--- (1) CHECK ALIGNMENT BETWEEN ORDINAL AND CELL ---"
-python check_crop_GI.py
+python -u check_crop_GI.py
 # Print statements: only 6EAWUIY4_Cecum_55 (due to Cecum vs Cecum-001)
 
 
 echo "--- (2) CHECK CONDA ENVIRONMENT ---"
-source set_env.sh
+source -u set_env.sh
 
 
 echo "--- (3) CHECKING CUDA/ANNO STATUS ---"
 # Check whether CUDA-tensor is possible
-python check_cuda.py
+python -u check_cuda.py
 
 # Print the status of the new/old annotations with total count
-python check_anno_status.py
+python -u check_anno_status.py
+
+# Confirm that image rotations/flips work as expected
+python -u check_img_trans.py
 
 
 echo "--- (4) GENERATE DATA ---"
 # nfill:    Number of pixels to pad around annotation point
 # s2:       Variance of gaussian blur
-python process_Xy.py --nfill $nfill --s2 $s2
+python -u process_Xy.py --nfill $nfill --s2 $s2
 # output:   ~/output/{df_cells.csv, df_pts.csv} (i)
 #           ~/output/annot_{cinci,hsk}.pickle   (ii)
 # (i) location of the cell positions and total cell count by ID
@@ -35,7 +38,7 @@ python process_Xy.py --nfill $nfill --s2 $s2
 
 echo "--- (5) GENERATE SUMMARY STATS ---"
 # Generate train/val/test split and distribution figures
-python explore_data.py
+python -u explore_data.py
 # output:   ~/output/train_val_test.csv
 # output:   ~/output/figures/labels/{cell}_{share/n}.png
 

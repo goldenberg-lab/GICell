@@ -27,7 +27,7 @@ if check_model:
 
 # # for debugging
 # save_model, check_model, is_eosin, is_inflam, nfill = True, True, False, True, 1
-# lr, p, nepoch, batch = 1e-3, 16, 1, 2
+# lr, p, nepoch, batch = 1e-3, 4, 1, 2
 
 from cells import valid_cells, inflam_cells
 
@@ -171,6 +171,8 @@ np.random.seed(seednum)
 
 # Load the model
 mdl = UNet(n_channels=3, n_classes=1, bl=p, batchnorm=True)
+# Set as float64
+mdl.double()
 with torch.no_grad():
     mdl.outc.conv.bias.fill_(b0)
 # Enable data parallelism if possible
@@ -224,7 +226,7 @@ eval_params = {'batch_size': 1,'shuffle': False}
 multiclass = False
 
 # Training (random rotations and flips)
-train_transform = transforms.Compose([randomRotate(tol=1e-4), randomFlip(), img2tensor(device)])
+train_transform = transforms.Compose([randomRotate(), randomFlip(), img2tensor(device)])
 train_data = CellCounterDataset(di=di_data, ids=di_tt['train'], transform=train_transform, multiclass=multiclass)
 train_gen = data.DataLoader(dataset=train_data,**train_params)
 
