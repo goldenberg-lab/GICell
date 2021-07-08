@@ -119,8 +119,44 @@ tmp2.drop(columns = cells, inplace=True)
 df_tt = pd.concat([tmp1, tmp2], axis=0).reset_index(None, True)
 print(df_tt.groupby('ds').is_zero.mean())
 
+#############################################
+## --- (3) PIXEL-WISE PRECISION/RECALL --- ##
+
+# Loop through and save all pixel-wise probabilities
+
+stime = time()
+holder = []
+for ii , rr in df_tt.head(1).iterrows():
+    ds, idt_tissue, tt = rr['ds'], rr['idt_tissue'], rr['tt']
+    print('Row %i of %i' % (ii+1, len(df_tt)))
+    # Load image/lbls
+    img_ii = di_data[ds][idt_tissue]['img'].copy().astype(int)
+    lbls_ii = di_data[ds][idt_tissue]['lbls'].copy().astype(float)
+    assert img_ii.shape[:2] == lbls_ii.shape[:2]
+    timg_ii, tlbls_ii = img_trans([img_ii, lbls_ii])
+    timg_ii = torch.unsqueeze(timg_ii,0) / 255
+    # break
+    holder_cell = []
+    for cell in cells:
+        print('~~~~ cell = %s ~~~~' % cell)
+        cell_ii = np.atleast_3d(lbls_ii[:,:,di_idx[cell]].sum(2))
+        cell_ii_bin = np.squeeze(np.where(cell_ii > 0, 1, 0))
+        ncell_ii = cell_ii.sum() / fillfac
+        # if ncell_ii == 0:
+        #     continue
+        with torch.no_grad():
+            tmp_logits = di_mdl[cell](timg_ii)
+        holder_logits[k, :, :, :] = tmp_logits
+        torch.cuda.empty_cache()
+        holder_sigmoid = sigmoid(t2n(holder_logits))
+        holder_Y = np.where(t2n(enc_all.lbl_tens)>0,1,0)
+
+        
+
+global_auprc(Ytrue, Ypred, n_points=50)
+
 #######################################
-## --- (3) INFERENCE STABILITY --- ##
+## --- (4) INFERENCE STABILITY --- ##
 
 stime = time()
 holder = []
@@ -221,44 +257,6 @@ gg_auroc_tt = (pn.ggplot(res_auc, pn.aes(x='tt',y='auc',color='cell')) +
  pn.scale_color_discrete(name='Type',labels=['Eosinophil','Inflammatory']))
 gg_save('gg_auroc_tt.png', dir_figures, gg_auroc_tt, 6, 4)
 
-
-#############################################
-## --- (4) PIXEL-WISE PRECISION/RECALL --- ##
-
-# Loop through and save all pixel-wise probabilities
-
-stime = time()
-holder = []
-for ii , rr in df_tt.head(1).iterrows():
-    ds, idt_tissue, tt = rr['ds'], rr['idt_tissue'], rr['tt']
-    print('Row %i of %i' % (ii+1, len(df_tt)))
-    # Load image/lbls
-    img_ii = di_data[ds][idt_tissue]['img'].copy().astype(int)
-    lbls_ii = di_data[ds][idt_tissue]['lbls'].copy().astype(float)
-    assert img_ii.shape[:2] == lbls_ii.shape[:2]
-    timg_ii, tlbls_ii = img_trans([img_ii, lbls_ii])
-    timg_ii = torch.unsqueeze(timg_ii,0) / 255
-    # break
-    holder_cell = []
-    for cell in cells:
-        print('~~~~ cell = %s ~~~~' % cell)
-        cell_ii = np.atleast_3d(lbls_ii[:,:,di_idx[cell]].sum(2))
-        cell_ii_bin = np.squeeze(np.where(cell_ii > 0, 1, 0))
-        ncell_ii = cell_ii.sum() / fillfac
-        # if ncell_ii == 0:
-        #     continue
-        with torch.no_grad():
-            tmp_logits = di_mdl[cell](timg_ii)
-        holder_logits[k, :, :, :] = tmp_logits
-        torch.cuda.empty_cache()
-        holder_sigmoid = sigmoid(t2n(holder_logits))
-        holder_Y = np.where(t2n(enc_all.lbl_tens)>0,1,0)
-
-        
-
-
-
-global_auprc(Ytrue, Ypred, n_points=50)
 
 
 

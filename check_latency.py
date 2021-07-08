@@ -29,8 +29,7 @@ for i in range(ntrain):
     stime = time()
     img_ii = torch.randn(1, n_channels, pixel_max, pixel_max).to(device=device)
     with torch.no_grad():
-        logits_ii = mdl(img_ii)
-        logits_ii = logits_ii.cpu().detach().numpy()
+        logits_ii = t2n(mdl(img_ii)).mean()
         #print(logits_ii.mean())
     dtime = time() - stime
     print('Took %.3f seconds for inference' % dtime)

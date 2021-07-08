@@ -1,8 +1,9 @@
 import os
 import numpy as np
 import pandas as pd
-from plotnine import *
-from plotnine.labels import ggtitle
+import plotnine as pn
+from plotnine.facets.facet_wrap import facet_wrap
+from plotnine.scales.scale_color import scale_color_distiller
 from funs_support import find_dir_cell, makeifnot
 from funs_plotting import gg_save
 from sklearn.model_selection import train_test_split
@@ -15,6 +16,9 @@ dir_labels = os.path.join(dir_figures, 'labels')
 [makeifnot(path) for path in [dir_figures, dir_labels]]
 
 seednum = 1234
+
+di_tt = {'train':'Train','val':'Val','test':'Test','oos':'Cinci'}
+di_ds = {'hsk':'SickKids', 'cinci':'Cincinatti'}
 
 ###########################
 ## --- (1) LOAD DATA --- ##
@@ -65,10 +69,35 @@ assert np.all(df_tt.groupby('tt').is_zero.mean().diff().abs().dropna() < 1e-2)
 df_tt.to_csv(os.path.join(dir_output, 'train_val_test.csv'),index=False)
 
 
-###################################
-## --- (3) PLOT DISTRIBUTION --- ##
+###############################
+## --- (3) AVERAGE CELLS --- ##
 
-di_ds = {'hsk':'SickKids', 'cinci':'Cincinatti'}
+tmp = dat_cells_long.merge(df_tt.drop(columns='is_zero'),'outer')
+tmp.tt = tmp.tt.fillna('oos')
+cell_dist = tmp.groupby(['ds','tt','cell']).n.describe()
+cell_dist = cell_dist.rename(columns={'25%':'lb','75%':'ub','50%':'mu','count':'n'})
+cell_dist = cell_dist.reset_index().drop(columns=['min','max','mean','std'])
+
+cell_dist = cell_dist.assign(cell=lambda x: x.cell.str.title(), n=lambda x: x.n.astype(int),
+                 ds=lambda x: x.ds.map(di_ds),
+                 tt=lambda x: pd.Categorical(x.tt,list(di_tt)).map(di_tt))
+
+
+posd = pn.position_dodge(0.5)
+gg_cell_dist_ds = (pn.ggplot(cell_dist,pn.aes(x='tt',y='mu',color='ds')) + 
+    pn.theme_bw() + pn.geom_point(position=posd) + 
+    pn.geom_linerange(pn.aes(ymin='lb',ymax='ub'),position=posd) + 
+    pn.labs(y='Median # of cells per image') + 
+    pn.ggtitle('Linerange shows IQR') + 
+    pn.facet_wrap('~cell',scales='free_y',nrow=2) + 
+    pn.scale_color_discrete(name='Dataset') + 
+    pn.theme(subplots_adjust={'wspace': 0.15},axis_title_x=pn.element_blank()) )
+gg_save('gg_cell_dist_ds.png', dir_figures, gg_cell_dist_ds, 12, 6.5)
+
+
+
+###############################
+## --- (4) CELL-SPECIFIC --- ##
 
 # --- (i) Share/number of tissue types --- #
 for cell in cells:
@@ -81,11 +110,11 @@ for cell in cells:
         tmp = tmp.assign(x=lambda z: pd.Categorical(z.idt_tissue, z.idt_tissue))
         tmp_title = 'Distribution of cell counts for %s: %s' % (cell, cn)
         tmp_fn = cell + '_' + cn + '.png'
-        gg_tmp = (ggplot(tmp, aes(x='x',y='y',fill='tissue')) + 
-            geom_col(color=None) + ggtitle(tmp_title) + 
-            labs(y=cn, x='Patient/Tissue') + 
-            theme(axis_text_x=element_blank(),axis_ticks_major_x=element_blank(),
-                panel_grid_major=element_blank(), panel_grid_minor=element_blank(),
-                panel_background=element_rect(fill='#ffffff')) + 
-            facet_wrap('~ds', scales='free_x', labeller=labeller(ds=di_ds)))
+        gg_tmp = (pn.ggplot(tmp, pn.aes(x='x',y='y',fill='tissue')) + 
+            pn.geom_col(color=None) + pn.ggtitle(tmp_title) + 
+            pn.labs(y=cn, x='Patient/Tissue') + 
+            pn.theme(axis_text_x=pn.element_blank(),axis_ticks_major_x=pn.element_blank(),
+                panel_grid_major=pn.element_blank(), panel_grid_minor=pn.element_blank(),
+                panel_background=pn.element_rect(fill='#ffffff')) + 
+            pn.facet_wrap('~ds', scales='free_x', labeller=pn.labeller(ds=di_ds)))
         gg_save(tmp_fn, dir_labels, gg_tmp, 9, 4)
