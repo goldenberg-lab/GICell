@@ -2,7 +2,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--save_model', dest='save_model', action='store_true', help='Save model as .pt file')
-parser.add_argument('--check_int', dest='save_model', action='store_true', help='Should forward pass be done to print intercept?')
+parser.add_argument('--check_int', dest='check_int', action='store_true', help='Should forward pass be done to print intercept?')
 parser.add_argument('--check_model', dest='check_model', action='store_true', help='Stop model after one epoch')
 parser.add_argument('--is_eosin', dest='is_eosin', action='store_true', help='Eosinophil cell only')
 parser.add_argument('--is_inflam', dest='is_inflam', action='store_true', help='Eosinophil + neutrophil + plasma + lymphocyte')
