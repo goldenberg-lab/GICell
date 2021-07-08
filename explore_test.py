@@ -1,21 +1,16 @@
 # Script to analyze performance of model on test set with both pixel-wise and clustered performance
 
 import argparse
-from plotnine.facets.facet_wrap import facet_wrap
-from plotnine.geoms.geom_point import geom_point
-from plotnine.positions.position_dodge import position_dodge
-
-from plotnine.scales.scale_color import scale_color_datetime
-from plotnine.scales.scale_xy import scale_y_continuous
-from plotnine.themes.elements import element_text
 parser = argparse.ArgumentParser()
 parser.add_argument('--mdl_hash', type=str, help='How many points to pad around pixel annotation point')
+parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
 args = parser.parse_args()
 mdl_hash = args.save_model
 
 # # For debugging
-# mdl_hash = '4424974300780924119'
-mdl_hash = None
+# mdl_hash = None
+mdl_hash = '14229595496617773301'
+nfill = 1
 
 # Remove .pkl if there
 if mdl_hash is not None:
@@ -52,10 +47,13 @@ use_cuda = torch.cuda.is_available()
 device = torch.device('cuda:0' if use_cuda else 'cpu')
 
 pixel_max = 255        
-
 img_trans = img2tensor(device)
-
 dtype = np.float32
+
+# number of padded points (i.e. count inflator)
+fillfac = (2 * nfill + 1) ** 2
+print('nfill: %i, fillfac: x%i' % (nfill, fillfac))
+
 
 ############################
 ## --- (1) LOAD MODEL --- ##
@@ -82,8 +80,8 @@ di_fn = dict(zip(cells,[os.path.join(os.path.join(dir_checkpoint,cell),fn_mdl) f
 assert all([os.path.exists(v) for v in di_fn.values()])
 di_mdl = {k1: {k2:v2 for k2, v2 in read_pickle(v1).items() if k2 in ['mdl','hp']} for k1, v1 in di_fn.items()}
 dat_hp = pd.concat([v['hp'] for v in di_mdl.values()])
-assert np.all(dat_hp.groupby('hp').val.var() == 0)
-lr, p, batch = dat_hp.groupby('hp').val.mean()[cn_hp].to_list()
+assert np.all(dat_hp.var(0) == 0)
+lr, p, batch = dat_hp.mean(0)[cn_hp].to_list()
 print('---- BEST HYPERPARAMETERS ----')
 print('lr = %.3f, p = %i, batch = %i' % (lr, p, batch))
 # Drop the hp and keep only model
@@ -227,6 +225,40 @@ gg_save('gg_auroc_tt.png', dir_figures, gg_auroc_tt, 6, 4)
 #############################################
 ## --- (4) PIXEL-WISE PRECISION/RECALL --- ##
 
+# Loop through and save all pixel-wise probabilities
+
+stime = time()
+holder = []
+for ii , rr in df_tt.head(1).iterrows():
+    ds, idt_tissue, tt = rr['ds'], rr['idt_tissue'], rr['tt']
+    print('Row %i of %i' % (ii+1, len(df_tt)))
+    # Load image/lbls
+    img_ii = di_data[ds][idt_tissue]['img'].copy().astype(int)
+    lbls_ii = di_data[ds][idt_tissue]['lbls'].copy().astype(float)
+    assert img_ii.shape[:2] == lbls_ii.shape[:2]
+    timg_ii, tlbls_ii = img_trans([img_ii, lbls_ii])
+    timg_ii = torch.unsqueeze(timg_ii,0) / 255
+    # break
+    holder_cell = []
+    for cell in cells:
+        print('~~~~ cell = %s ~~~~' % cell)
+        cell_ii = np.atleast_3d(lbls_ii[:,:,di_idx[cell]].sum(2))
+        cell_ii_bin = np.squeeze(np.where(cell_ii > 0, 1, 0))
+        ncell_ii = cell_ii.sum() / fillfac
+        # if ncell_ii == 0:
+        #     continue
+        with torch.no_grad():
+            tmp_logits = di_mdl[cell](timg_ii)
+        holder_logits[k, :, :, :] = tmp_logits
+        torch.cuda.empty_cache()
+        holder_sigmoid = sigmoid(t2n(holder_logits))
+        holder_Y = np.where(t2n(enc_all.lbl_tens)>0,1,0)
+
+        
+
+
+
+global_auprc(Ytrue, Ypred, n_points=50)
 
 
 

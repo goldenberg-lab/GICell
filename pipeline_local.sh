@@ -12,7 +12,7 @@ python -u check_crop_GI.py
 
 
 echo "--- (2) CHECK CONDA ENVIRONMENT ---"
-source -u set_env.sh
+source set_env.sh
 
 
 echo "--- (3) CHECKING CUDA/ANNO STATUS ---"

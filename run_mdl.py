@@ -195,7 +195,7 @@ if check_int:  # Check that intercept approximates cell count
     mat = np.zeros([len(idt_tissue), 2])
     mdl.eval()
     for ii, idt in enumerate(idt_tissue):
-        if (ii + 1) % 25 == 0:
+        if (ii + 1) % 1 == 0:
             print('ID-tissue %s (%i of %i)' % (idt, ii + 1, len(idt_tissue)))
         tens = img2tensor(device)([di_data[idt]['img'],di_data[idt]['lbls']])[0]
         # First channel should be batch size
@@ -206,6 +206,7 @@ if check_int:  # Check that intercept approximates cell count
             ncl = logits.cpu().mean().numpy()+0
             nc = torch.sigmoid(logits).cpu().sum().numpy()+0
             mat[ii] = [nc, ncl]
+        print('run time = %.3f' % (time() - tnow))
     torch.cuda.empty_cache()
     print('Took %i seconds to pass through all images' % (time() - tnow))
     emp_cells, emp_ncl = mat.mean(0)
