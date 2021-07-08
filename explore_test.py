@@ -2,9 +2,11 @@
 
 import argparse
 from plotnine.facets.facet_wrap import facet_wrap
+from plotnine.geoms.geom_point import geom_point
 from plotnine.positions.position_dodge import position_dodge
 
 from plotnine.scales.scale_color import scale_color_datetime
+from plotnine.scales.scale_xy import scale_y_continuous
 from plotnine.themes.elements import element_text
 parser = argparse.ArgumentParser()
 parser.add_argument('--mdl_hash', type=str, help='How many points to pad around pixel annotation point')
@@ -28,7 +30,7 @@ from funs_support import find_dir_cell, hash_hp, makeifnot, read_pickle, no_diff
 from cells import valid_cells, inflam_cells
 from funs_stats import global_auroc
 import plotnine as pn
-
+from scipy import stats
 
 dir_base = find_dir_cell()
 dir_output = os.path.join(dir_base, 'output')
@@ -90,6 +92,8 @@ di_mdl = {k: v.eval() for k, v in di_mdl.items()}
 di_mdl = {k: v.double() for k, v in di_mdl.items()}
 # Models should be eval mode
 assert all([not k.training for k in di_mdl.values()])
+
+di_tt = {'train':'Train','val':'Val','test':'Test','oos':'Cinci'}
 
 ###########################
 ## --- (2) LOAD DATA --- ##
@@ -171,80 +175,62 @@ for ii , rr in df_tt.iterrows():
 # Merge and save
 inf_stab = pd.concat(holder).reset_index(None,True)
 inf_stab.to_csv(os.path.join(dir_checkpoint, 'inf_stab.csv'),index=False)
+inf_stab.tt = pd.Categorical(inf_stab.tt,['train','val','test','oos']).map(di_tt)
+
+inf_stab.assign(is_na=lambda x: x.auc.isnull()).groupby(['tt','cell']).is_na.mean()
 
 # Plot it
 tmp = inf_stab.assign(xlab=lambda x: 'r='+x.rotate.astype(str)+',f='+x.flip.astype(str))
 tmp = tmp.assign(xlab=lambda x: np.where(x.rotate==-1,'mean',x.xlab))
 tmp.drop(columns=['rotate','flip','ds'],inplace=True)
 
-posd = pn.position_dodge(0.5)
+posd = pn.position_dodge(0.75)
 gg_inf_stab = (pn.ggplot(tmp, pn.aes(x='xlab',y='auc',color='tt')) + 
     pn.theme_bw() + pn.geom_boxplot(position=posd) + 
     pn.facet_wrap('~cell',ncol=1,labeller=pn.labeller(cell=di_cell)) + 
     pn.labs(x='Rotate/Flip',y='AUROC',title='Pixel-wise') + 
-    pn.scale_color_discrete(name='Type') + 
+    pn.scale_color_discrete(name='Type',labels=['Train','Val','Test','Cinci']) + 
     pn.theme(axis_text_x=pn.element_text(angle=90)))
-gg_save('gg_inf_stab.png', dir_figures, gg_inf_stab, 8, 8)
+gg_save('gg_inf_stab.png', dir_figures, gg_inf_stab, 12, 8)
+
+# Determine and AUROC gain
+cn_gg = ['tt','cell','is_mu']
+tmp = inf_stab.assign(is_mu=lambda x: x.rotate<0).groupby(cn_gg)
+dat_ttest = tmp.auc.apply(lambda x: pd.Series({'auc':x.mean(), 'n':len(x),'se':x.std(ddof=1)}))
+dat_ttest = dat_ttest.reset_index().pivot_table('auc',cn_gg,'level_3').reset_index()
+dat_ttest.is_mu = dat_ttest.is_mu.astype(str)
+dat_ttest = dat_ttest.pivot_table(['auc','n','se'],['tt','cell'],'is_mu').reset_index()
+cn = pd.Series(['_'.join(col).strip() for col in dat_ttest.columns.values]).str.replace('\\_$','',regex=True)
+dat_ttest.columns = cn
+dat_ttest = dat_ttest.assign(d_auc=lambda x: x.auc_True - x.auc_False,
+    se_d=lambda x: np.sqrt(x.se_True**2/x.n_True + x.se_False**2/x.n_False) )
+dat_ttest.d_auc.mean()
+
+# Standard AUROC
+critv = stats.norm.ppf(0.975)
+res_auc = inf_stab.query('rotate==0 & flip==0').drop(columns=['rotate','flip']).dropna().groupby(['tt','cell'])
+res_auc = res_auc.auc.apply(lambda x: pd.Series({'auc':x.mean(), 'n':len(x),'se':x.std(ddof=1)}))
+res_auc = res_auc.reset_index().pivot_table('auc',['tt','cell'],'level_2').reset_index()
+res_auc = res_auc.assign(lb=lambda x: x.auc-critv*x.se/np.sqrt(x.n), ub=lambda x: x.auc+critv*x.se/np.sqrt(x.n))
+
+position = pn.position_dodge(0.5)
+gg_auroc_tt = (pn.ggplot(res_auc, pn.aes(x='tt',y='auc',color='cell')) + 
+ pn.theme_bw() + pn.labs(y='Average AUROC',title='Pixel-wise') + 
+ pn.geom_point(position=posd,size=2) + 
+ pn.theme(axis_title_x=pn.element_blank()) + 
+ pn.geom_linerange(pn.aes(ymin='lb',ymax='ub'),position=posd) + 
+ pn.scale_y_continuous(limits=[0.8,1],breaks=list(np.arange(0.8,1.01,0.05))) + 
+ pn.scale_color_discrete(name='Type',labels=['Eosinophil','Inflammatory']))
+gg_save('gg_auroc_tt.png', dir_figures, gg_auroc_tt, 6, 4)
 
 
-      
-######################################
-## --- (4) PIXEL-WISE INFERENCE --- ##
-
-# (i) Plot figures
-# (ii) Precision/recall
+#############################################
+## --- (4) PIXEL-WISE PRECISION/RECALL --- ##
 
 
-
-# Get the pixel sizes
-h_pixel, w_pixel = di_data[df_cells.ds[0]][df_cells.idt_tissue[0]]['img'].shape[:2]
-assert h_pixel == w_pixel
-
-# array holder
-arr_holder = np.zeros([len(df_tt), h_pixel, w_pixel])
-
-
-
-
-
-# Holders for labels and phat
-di_plbl = dict(zip(cells, [{'phat':arr_holder.copy(), 'lbls':arr_holder.copy()} for cell in cells]))
-
-for ii , rr in df_tt.iterrows():
-    print('Row %i of %i' % (ii+1, len(df_tt)))
-    ds, idt_tissue, tt = rr['ds'], rr['idt_tissue'], rr['tt']
-    # Load image/lbls
-    img_ii = di_data[ds][idt_tissue]['img'].copy()
-    lbls_ii = di_data[ds][idt_tissue]['lbls'].copy()
-    assert img_ii.shape[:2] == lbls_ii.shape[:2]
-    img_lbls_ii = [img_ii, lbls_ii]
-    timg_ii, tlbls_ii = img_trans(img_lbls_ii)
-    # UNet needs first dimension for batch-size
-    timg_ii = torch.unsqueeze(timg_ii,dim=0) / pixel_max
-
-    timg_ii.sum()
-
-
-    # For each model get logits and labels
-    for cell in cells:
-        with torch.no_grad():
-            tmp_phat = sigmoid(t2n(torch.squeeze(di_mdl[cell](timg_ii))))
-            tmp_phat.flatten().shape
-            timg_ii
-
-        tmp_lbls = lbls_ii[:,:,di_idx[cell]].sum(2)
-        assert tmp_phat.shape == tmp_lbls.shape
-        # Store
-        di_plbl[cell]['phat'][ii,:,:] = tmp_phat
-        di_plbl[cell]['lbls'][ii,:,:] = tmp_lbls
-
-# Save all predictions/labels in a hickle
-path_plbl = os.path.join(dir_output, 'di_plbl.pickle')
-hickle.dump(di_plbl, path_plbl, 'w')
 
 
 ########################################
-## --- (4) PIXEL-WISE PERFORMANCE --- ##
+## --- (5) PROBABILITY CLUSTERING --- ##
 
 
-    global_auroc(Ytrue,Ypred)
