@@ -16,8 +16,8 @@ python -u check_cuda.py
 
 # Loop over different learning rate/batch_size/architecture configurations
 nepoch=90
-lr_seq="0.002 0.003"
-bs_seq="6 8 10 12"
+lr_seq="0.002"
+bs_seq="6"
 p_seq="64"
 
 jj=0
@@ -28,10 +28,10 @@ for lr in $lr_seq; do
       echo "##### ITERATION: "$jj" #####"
       echo "learning rate: "$lr", batch-size: "$bs", # params: "$p
       echo "--- Cell type: INFLAMMATORY ---"
-      python -u run_mdl.py --is_inflam --nepoch $nepoch --batch $bs --lr $lr --p $p
+      python -u run_mdl.py --is_inflam --nepoch $nepoch --batch $bs --lr $lr --p $p --save_model
 
       echo "--- Cell type: EOSINOPHIL ---"
-      python -u run_mdl.py --is_eosin --nepoch $nepoch --batch $bs --lr $lr --p $p
+      python -u run_mdl.py --is_eosin --nepoch $nepoch --batch $bs --lr $lr --p $p --save_model
     done
   done
 done

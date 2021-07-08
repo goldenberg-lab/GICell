@@ -12,6 +12,10 @@ elif [[ $cpu == "cavansite" ]]; then
     dir_code=/home/erik/Documents/projects/GICell
     path_conda=/opt/programs/anaconda3/etc/profile.d/conda.sh
     dir_nohup=/data/erik/GICell/output/nohup
+elif [[ $cpu == "malachite" ]]; then
+    dir_code=/home/erik/projects/GICell/code
+    path_conda=/home/erik/miniconda3/etc/profile.d/conda.sh
+    dir_nohup=/home/erik/projects/GICell/output/nohup
 else
     echo "somewhere else"
 fi

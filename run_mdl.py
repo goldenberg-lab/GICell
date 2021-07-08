@@ -2,6 +2,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--save_model', dest='save_model', action='store_true', help='Save model as .pt file')
+parser.add_argument('--check_int', dest='save_model', action='store_true', help='Should forward pass be done to print intercept?')
 parser.add_argument('--check_model', dest='check_model', action='store_true', help='Stop model after one epoch')
 parser.add_argument('--is_eosin', dest='is_eosin', action='store_true', help='Eosinophil cell only')
 parser.add_argument('--is_inflam', dest='is_inflam', action='store_true', help='Eosinophil + neutrophil + plasma + lymphocyte')
@@ -12,7 +13,7 @@ parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
 parser.add_argument('--p', type=int, default=8, help='Number of initial params for NNet')
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
 args = parser.parse_args()
-save_model, check_model = args.save_model, args.check_model
+save_model, check_int, check_model = args.save_model, args.check_int, args.check_model
 is_eosin, is_inflam = args.is_eosin, args.is_inflam
 nepoch, batch, lr, p, nfill = args.nepoch, args.batch, args.lr, args.p, args.nfill
 
@@ -189,27 +190,28 @@ criterion = torch.nn.BCEWithLogitsLoss()
 # Optimizer
 optimizer = torch.optim.Adagrad(params=mdl.parameters(), lr=lr)
 
-# Check that intercept approximates cell count
-tnow = time()
-mat = np.zeros([len(idt_tissue), 2])
-mdl.eval()
-for ii, idt in enumerate(idt_tissue):
-    if (ii + 1) % 25 == 0:
-        print('ID-tissue %s (%i of %i)' % (idt, ii + 1, len(idt_tissue)))
-    tens = img2tensor(device)([di_data[idt]['img'],di_data[idt]['lbls']])[0]
-    # First channel should be batch size
-    tens = torch.unsqueeze(tens, dim=0) / pixel_max
-    # tens = tens.reshape([1, n_channels, n_pixels, n_pixels]) / pixel_max
-    with torch.no_grad():
-        logits = mdl(tens)
-        ncl = logits.cpu().mean().numpy()+0
-        nc = torch.sigmoid(logits).cpu().sum().numpy()+0
-        mat[ii] = [nc, ncl]
-torch.cuda.empty_cache()
-print('Took %i seconds to pass through all images' % (time() - tnow))
-emp_cells, emp_ncl = mat.mean(0)
-print('Intercept: %.2f, empirical logits: %.2f' % (b0, emp_ncl))
-print('fillfac*cells: %.2f, predicted cells: %.2f' % (mu_cells*fillfac, emp_cells))
+if check_int:  # Check that intercept approximates cell count
+    tnow = time()
+    mat = np.zeros([len(idt_tissue), 2])
+    mdl.eval()
+    for ii, idt in enumerate(idt_tissue):
+        if (ii + 1) % 25 == 0:
+            print('ID-tissue %s (%i of %i)' % (idt, ii + 1, len(idt_tissue)))
+        tens = img2tensor(device)([di_data[idt]['img'],di_data[idt]['lbls']])[0]
+        # First channel should be batch size
+        tens = torch.unsqueeze(tens, dim=0) / pixel_max
+        # tens = tens.reshape([1, n_channels, n_pixels, n_pixels]) / pixel_max
+        with torch.no_grad():
+            logits = mdl(tens)
+            ncl = logits.cpu().mean().numpy()+0
+            nc = torch.sigmoid(logits).cpu().sum().numpy()+0
+            mat[ii] = [nc, ncl]
+    torch.cuda.empty_cache()
+    print('Took %i seconds to pass through all images' % (time() - tnow))
+    emp_cells, emp_ncl = mat.mean(0)
+    print('Intercept: %.2f, empirical logits: %.2f' % (b0, emp_ncl))
+    print('fillfac*cells: %.2f, predicted cells: %.2f' % (mu_cells*fillfac, emp_cells))
+
 
 ##############################
 ## --- (3) DATA LOADERS --- ##

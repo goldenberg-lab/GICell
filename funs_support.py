@@ -30,7 +30,10 @@ def find_dir_cell():
         dir_cell = '/data/GICell'
     elif cpu == 'cavansite':
         print('On cavansite')
-        dir_cell = '/data/erik/GICell/'
+        dir_cell = '/data/erik/GICell'
+    elif cpu == 'malachite':
+        print('On malachite')
+        dir_cell = '/home/erik/projects/GICell'
     else:
         sys.exit('Where are we?!')
     return dir_cell
