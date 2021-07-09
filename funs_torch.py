@@ -37,7 +37,7 @@ class img2tensor(object):
             device = torch.device('cpu')
         self.device = device
         if dtype is None:
-            dtype = np.float64
+            dtype = np.float32
         self.dtype = dtype
 
     def __call__(self, imgs_lbls):
@@ -108,7 +108,7 @@ class randomFlip(object):
 #       before reverse_flips can be called
 
 class all_img_flips():
-    def __init__(self, img_lbl, enc_tens=None, tol=1e-10):
+    def __init__(self, img_lbl, enc_tens=None, tol=1e-10, is_double=False):
         assert len(img_lbl) == 2 and isinstance(img_lbl, list)
         self.img_lbl = img_lbl.copy()
         self.img = img_lbl[0].copy()
@@ -124,6 +124,7 @@ class all_img_flips():
         self.ktot = len(self.kseq_rotate) * len(self.kseq_flip)
         self.k_df = pd.DataFrame(np.zeros([self.ktot, 2],dtype=int),columns=['rotate','flip'])
         self.tol = tol
+        self.is_double = is_double
 
     def apply_flips(self):
         self.img_holder = np.zeros([self.h, self.w, self.c, self.ktot],dtype=self.img.dtype)
@@ -147,9 +148,13 @@ class all_img_flips():
 
     def enc2tensor(self):
         assert self.enc_tens is not None
-        self.img_tens = torch.zeros([self.ktot, self.c, self.h, self.w]).double()
+        self.img_tens = torch.zeros([self.ktot, self.c, self.h, self.w])
+        if self.is_double:
+            self.img_tens = self.img_tens.double()
         self.img_tens = self.img_tens.to(self.enc_tens.device)
-        self.lbl_tens = torch.zeros([self.ktot, self.p, self.h, self.w]).double()
+        self.lbl_tens = torch.zeros([self.ktot, self.p, self.h, self.w])
+        if self.is_double:
+            self.lbl_tens = self.lbl_tens.double()
         self.lbl_tens = self.lbl_tens.to(self.enc_tens.device)
         for jj in range(self.ktot):
             tmp_lst = [self.img_holder[:,:,:,jj], self.lbl_holder[:,:,:,jj]]

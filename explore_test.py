@@ -1,6 +1,9 @@
 # Script to analyze performance of model on test set with both pixel-wise and clustered performance
 
 import argparse
+from plotnine.facets.facet_wrap import facet_wrap
+
+from plotnine.scales.scale_manual import scale_linetype_manual
 parser = argparse.ArgumentParser()
 parser.add_argument('--mdl_hash', type=str, help='How many points to pad around pixel annotation point')
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
@@ -21,9 +24,9 @@ import numpy as np
 import pandas as pd
 import hickle
 from time import time
-from funs_support import find_dir_cell, hash_hp, makeifnot, read_pickle, no_diff, t2n, sigmoid
+from funs_support import find_dir_cell, hash_hp, read_pickle, no_diff, t2n, sigmoid
 from cells import valid_cells, inflam_cells
-from funs_stats import global_auroc
+from funs_stats import global_auroc, global_auprc
 import plotnine as pn
 from scipy import stats
 
@@ -123,10 +126,15 @@ print(df_tt.groupby('ds').is_zero.mean())
 ## --- (3) PIXEL-WISE PRECISION/RECALL --- ##
 
 # Loop through and save all pixel-wise probabilities
+h, w, c = di_data[df_tt.ds[0]][df_tt.idt_tissue[0]]['img'].shape
+assert h == w
+
+# Numpy array to store results: (h x w x # cells x # patients)
+holder_logits = np.zeros([h, w, len(cells), len(df_tt)])
+holder_lbls = np.zeros([h, w, len(cells), len(df_tt)])
 
 stime = time()
-holder = []
-for ii , rr in df_tt.head(1).iterrows():
+for ii , rr in df_tt.iterrows():
     ds, idt_tissue, tt = rr['ds'], rr['idt_tissue'], rr['tt']
     print('Row %i of %i' % (ii+1, len(df_tt)))
     # Load image/lbls
@@ -135,25 +143,46 @@ for ii , rr in df_tt.head(1).iterrows():
     assert img_ii.shape[:2] == lbls_ii.shape[:2]
     timg_ii, tlbls_ii = img_trans([img_ii, lbls_ii])
     timg_ii = torch.unsqueeze(timg_ii,0) / 255
-    # break
-    holder_cell = []
-    for cell in cells:
-        print('~~~~ cell = %s ~~~~' % cell)
+    for jj, cell in enumerate(cells):
         cell_ii = np.atleast_3d(lbls_ii[:,:,di_idx[cell]].sum(2))
         cell_ii_bin = np.squeeze(np.where(cell_ii > 0, 1, 0))
         ncell_ii = cell_ii.sum() / fillfac
-        # if ncell_ii == 0:
-        #     continue
+        print('~~~~ cell = %s, n=%i ~~~~' % (cell, ncell_ii))
         with torch.no_grad():
-            tmp_logits = di_mdl[cell](timg_ii)
-        holder_logits[k, :, :, :] = tmp_logits
-        torch.cuda.empty_cache()
-        holder_sigmoid = sigmoid(t2n(holder_logits))
-        holder_Y = np.where(t2n(enc_all.lbl_tens)>0,1,0)
-
+            tmp_logits = t2n(di_mdl[cell](timg_ii))
+        # Save for later
+        holder_logits[:,:,jj,ii] = tmp_logits
+        holder_lbls[:,:,jj,ii] = cell_ii_bin
+    torch.cuda.empty_cache()
+    dtime = time() - stime
+    nleft, rate = len(df_tt) - (ii+1), (ii+1) / dtime
+    meta = (nleft / rate) / 60
+    print('ETA: %.1f minutes (%i of %i)' % (meta, ii+1, len(df_tt)))
         
+# Calculate precision/recall for each cell type
+holder = []
+for jj, cell in enumerate(cells):
+    for tt in di_tt:
+        print('~~~~ cell = %s, tt=%s ~~~~' % (cell, tt))
+        idx_tt = df_tt.query('tt==@tt').idt_tissue.index.values
+        phat_tt = sigmoid(holder_logits[:, :, jj, idx_tt])
+        ybin_tt = holder_lbls[:, :, jj, idx_tt]
+        tmp_df = global_auprc(ybin_tt, phat_tt, n_points=50)
+        tmp_df = tmp_df.assign(cell=cell, tt=tt)
+        holder.append(tmp_df)
+res_pr = pd.concat(holder).melt(['cell','tt','thresh'],None,'msr')
+res_pr.tt = pd.Categorical(res_pr.tt, list(di_tt)).map(di_tt)
+res_pr.cell = res_pr.cell.map(di_cell)
 
-global_auprc(Ytrue, Ypred, n_points=50)
+# Make a plot
+gg_auprc = (pn.ggplot(res_pr, pn.aes(x='thresh',y='value',color='tt',linetype='msr')) + 
+    pn.theme_bw() + pn.geom_line() + 
+    pn.facet_wrap('~cell',nrow=1,scales='free_x') + 
+    pn.scale_color_discrete(name='Dataset') + 
+    pn.scale_linetype_manual(name='Measure',labels=['Precision','Recall'],values=['solid','dashed']) + 
+    pn.labs(y='Percent',x='Threshold'))
+gg_save('gg_auprc.png', dir_figures, gg_auprc, 10, 4)
+
 
 #######################################
 ## --- (4) INFERENCE STABILITY --- ##

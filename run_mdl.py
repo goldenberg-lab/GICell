@@ -27,8 +27,9 @@ if check_model:
     nepoch = 1
 
 # # for debugging
-# save_model, check_model, is_eosin, is_inflam, nfill = True, True, False, True, 1
-# lr, p, nepoch, batch = 1e-3, 4, 1, 2
+# save_model, check_int, check_model = True, True, True
+# is_eosin, is_inflam, nfill = False, True, 1
+# lr, p, nepoch, batch = 1e-3, 64, 1, 2
 
 from cells import valid_cells, inflam_cells
 
@@ -58,9 +59,7 @@ import random
 import numpy as np
 import pandas as pd
 from time import time
-import plotnine as pn
-from funs_support import sigmoid, find_dir_cell, makeifnot, hash_hp, write_pickle
-from funs_plotting import gg_save
+from funs_support import sigmoid, find_dir_cell, makeifnot, hash_hp, write_pickle, t2n
 from funs_stats import get_YP, cross_entropy, global_auprc, global_auroc
 
 from mdls.unet import UNet
@@ -104,6 +103,8 @@ pixel_max = 255
 df_tt = pd.read_csv(os.path.join(dir_output,'train_val_test.csv'))
 di_tt = df_tt.groupby('tt').apply(lambda x: x.idt_tissue.to_list()).loc[['train','val','test']].to_dict()
 idt_tissue = df_tt.idt_tissue.to_list()
+# Corresponding index
+di_tt_idx = {k: np.where(pd.Series(idt_tissue).isin(v))[0] for k,v in di_tt.items()}
 
 # --- (ii) Load data --- #
 # Images ['img'] and labels (gaussian blur) ['lbls']
@@ -112,6 +113,8 @@ di_data = hickle.load(path_pickle)
 gc.collect()
 # Aggregate counts
 df_cells = pd.read_csv(os.path.join(dir_output,'df_cells.csv'))
+# Sum based on cell type
+df_cells = df_cells[['ds','idt_tissue']].assign(cell=df_cells[cells].sum(1).values)
 
 # --- (iii) Set labels to match cell type --- #
 idx_cell = np.where(pd.Series(valid_cells).isin(cells))[0]
@@ -119,7 +122,7 @@ holder = []
 for kk, idt in enumerate(idt_tissue):
     tmp = di_data[idt]['lbls'].copy()
     tmp2 = np.atleast_3d(tmp[:, :, idx_cell].sum(2))
-    gt = int(df_cells.query('idt_tissue==@idt',engine='python')[cells].sum(1).values)
+    gt = int(df_cells.query('idt_tissue==@idt',engine='python').cell.values[0])
     est = tmp2.sum() / fillfac
     if gt > 0:
         err_pct = 100*(gt / est - 1)
@@ -139,25 +142,10 @@ assert np.all(dat_imsize == n_pixels)
 # --- (v) Get mean number of cells/pixels for intercept initialization --- #
 # Use only training data to initialize intercept
 mu_pixels = np.mean([di_data[z]['lbls'].mean() for z in di_data if z in di_tt['train']])
-mu_cells = df_cells.query('idt_tissue.isin(@idt_tissue)',engine='python')[cells].sum(1).mean()
+mu_cells = df_cells[df_cells.idt_tissue.isin(di_tt['train'])].cell.mean()
 err = 100 * ((mu_pixels * n_pixels**2 / fillfac) / mu_cells - 1)
 print('Error: %.2f%%' % err)
 b0 = np.log(mu_pixels / (1 - mu_pixels))
-
-# Compare percent of non-empty pixels to actual count
-tmp1 = np.array([np.mean(di_data[z]['lbls']!=0) for z in idt_tissue])
-tmp2 = np.array([np.round(np.sum(di_data[z]['lbls'])/fillfac).astype(int) for z in idt_tissue])
-tmp3 = pd.DataFrame({'idt':idt_tissue, 'pct':tmp1, 'est':tmp2})
-tmp4 = df_cells.rename(columns={'idt_tissue':'idt'})[['idt'] + cells]
-tmp4 = tmp4.drop(columns=cells).assign(n=tmp4[cells].sum(1))
-dat_count_pct = tmp4.merge(tmp3, 'right', 'idt').sort_values('pct',ascending=False)
-dat_count_pct = dat_count_pct.drop(columns='idt').set_index(dat_count_pct.idt)
-assert np.abs(dat_count_pct.n - dat_count_pct.est).max() <= 1
-gg_count_pct = (pn.ggplot(dat_count_pct,pn.aes(x='n',y='pct')) + pn.theme_bw() + pn.geom_point(size=0.5))
-tmp_fn = 'gg_count_pct_' + cell_fold + '.png'
-gg_save(tmp_fn, dir_figures, gg_count_pct, 5, 4)
-# Ensure relationship is at least 99% correlated
-assert dat_count_pct[['n','pct']].corr().iloc[0,1] > 0.99
 
 
 ###################################
@@ -171,9 +159,7 @@ random.seed(seednum)
 np.random.seed(seednum)
 
 # Load the model
-mdl = UNet(n_channels=3, n_classes=1, bl=p, batchnorm=True)
-# Set as float64
-mdl.double()
+mdl = UNet(n_channels=n_channels, n_classes=1, bl=p, batchnorm=True)
 with torch.no_grad():
     mdl.outc.conv.bias.fill_(b0)
 # Enable data parallelism if possible
@@ -194,19 +180,20 @@ if check_int:  # Check that intercept approximates cell count
     tnow = time()
     mat = np.zeros([len(idt_tissue), 2])
     mdl.eval()
+    enc_tens = img2tensor(device)
     for ii, idt in enumerate(idt_tissue):
-        if (ii + 1) % 1 == 0:
+        if (ii + 1) % 25 == 0:
             print('ID-tissue %s (%i of %i)' % (idt, ii + 1, len(idt_tissue)))
-        tens = img2tensor(device)([di_data[idt]['img'],di_data[idt]['lbls']])[0]
+            print('run time = %.3f' % (time() - tnow))
+        tens = enc_tens([di_data[idt]['img'],di_data[idt]['lbls']])[0]
         # First channel should be batch size
         tens = torch.unsqueeze(tens, dim=0) / pixel_max
         # tens = tens.reshape([1, n_channels, n_pixels, n_pixels]) / pixel_max
         with torch.no_grad():
-            logits = mdl(tens)
-            ncl = logits.cpu().mean().numpy()+0
-            nc = torch.sigmoid(logits).cpu().sum().numpy()+0
-            mat[ii] = [nc, ncl]
-        print('run time = %.3f' % (time() - tnow))
+            logits = t2n(mdl(tens))
+        ncl = logits.mean()
+        nc = sigmoid(logits).sum()
+        mat[ii] = [nc, ncl]
     torch.cuda.empty_cache()
     print('Took %i seconds to pass through all images' % (time() - tnow))
     emp_cells, emp_ncl = mat.mean(0)
@@ -248,9 +235,8 @@ eval_gen = data.DataLoader(dataset=eval_data, **eval_params)
 Y_val = get_YP(val_gen, mdl, n_pixels, n_pixels, ret_Y=True, ret_P=False)
 Ybin_val = np.where(Y_val>0,1,0)
 gt1 = np.round(Y_val.sum(0).sum(0) / fillfac).astype(int)
-gt2 = dat_count_pct.loc[di_tt['val']]['n'].values
+gt2 = df_cells.set_index('idt_tissue').loc[di_tt['val']]['cell'].values
 assert np.all(gt1 == gt2)
-
 Phat_init = sigmoid(get_YP(val_gen, mdl, n_pixels, n_pixels, ret_Y=False, ret_P=True))
 print('Initial AUC: %.1f%%' % (100*global_auroc(Ybin_val, Phat_init)))
 
@@ -258,7 +244,6 @@ print('Initial AUC: %.1f%%' % (100*global_auroc(Ybin_val, Phat_init)))
 ## --- (4) TRAINING --- ##
 
 b_check = (len(train_gen) + 1) // 5
-
 
 stime, ee, ii = time(), 0, 1
 holder_ce_auc, holder_pr = [], []

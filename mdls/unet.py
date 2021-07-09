@@ -24,7 +24,7 @@ def find_bl_UNet(path, device, batchnorm=True, start=2, stop=32, step=2):
     return mdl
 
 
-# x = torch.tensor(np.random.rand(1,3,501,501)).double()
+# x = torch.tensor(np.random.rand(1,3,501,501))
 # self = UNet(n_channels=3,n_classes=1)
 class UNet(nn.Module):
     def __init__(self, n_channels, n_classes, bl = 8, batchnorm=False):
