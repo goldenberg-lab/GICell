@@ -7,8 +7,8 @@ import imageio
 import requests
 from io import BytesIO
 import numpy as np
-import torch
 from funs_torch import img2tensor, randomFlip, randomRotate, all_img_flips
+import torch
 
 dir_base = find_dir_cell()
 dir_output = os.path.join(dir_base, 'output')
@@ -41,7 +41,7 @@ lbl_ed = np.atleast_3d(np.where(img_ed[:,:,2] < 25, 1, 0))
 img_lbl_ed = [img_ed, lbl_ed]
 
 # Initialize tensor convert
-enc_tens = img2tensor(device)
+enc_tens = img2tensor(device,dtype=np.float64)
 
 #####################################
 ## --- (2) CHECK ROTATION/FLIP --- ##

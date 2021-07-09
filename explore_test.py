@@ -1,7 +1,10 @@
 # Script to analyze performance of model on test set with both pixel-wise and clustered performance
 
 import argparse
+import enum
 from plotnine.facets.facet_wrap import facet_wrap
+from plotnine.geoms.geom_hline import geom_hline
+from plotnine.labels import ggtitle
 
 from plotnine.scales.scale_manual import scale_linetype_manual
 parser = argparse.ArgumentParser()
@@ -12,7 +15,7 @@ mdl_hash = args.save_model
 
 # # For debugging
 # mdl_hash = None
-mdl_hash = '14229595496617773301'
+mdl_hash = '4424974300780924119'
 nfill = 1
 
 # Remove .pkl if there
@@ -90,7 +93,7 @@ print('lr = %.3f, p = %i, batch = %i' % (lr, p, batch))
 # Drop the hp and keep only model
 di_mdl = {k: v['mdl'] for k, v in di_mdl.items()}
 di_mdl = {k: v.eval() for k, v in di_mdl.items()}
-di_mdl = {k: v.double() for k, v in di_mdl.items()}
+di_mdl = {k: v.float() for k, v in di_mdl.items()}
 # Models should be eval mode
 assert all([not k.training for k in di_mdl.values()])
 
@@ -105,6 +108,7 @@ di_data = {ds: hickle.load(os.path.join(dir_output, 'annot_'+ds+'.pickle')) for 
 
 # (ii) Aggregate cell counts
 df_cells = pd.read_csv(os.path.join(dir_output, 'df_cells.csv'))
+df_cells_long = df_cells.melt(['ds','idt_tissue'],None,'cell','act')
 
 # Check alignment
 assert df_cells.groupby('ds').apply(lambda x: no_diff(x.idt_tissue,list(di_data[x.ds.iloc[0]]))).all()
@@ -130,16 +134,16 @@ h, w, c = di_data[df_tt.ds[0]][df_tt.idt_tissue[0]]['img'].shape
 assert h == w
 
 # Numpy array to store results: (h x w x # cells x # patients)
-holder_logits = np.zeros([h, w, len(cells), len(df_tt)])
-holder_lbls = np.zeros([h, w, len(cells), len(df_tt)])
+holder_logits = np.zeros([len(df_tt), len(cells), h, w])
+holder_lbls = holder_logits.copy()
 
 stime = time()
 for ii , rr in df_tt.iterrows():
     ds, idt_tissue, tt = rr['ds'], rr['idt_tissue'], rr['tt']
     print('Row %i of %i' % (ii+1, len(df_tt)))
     # Load image/lbls
-    img_ii = di_data[ds][idt_tissue]['img'].copy().astype(int)
-    lbls_ii = di_data[ds][idt_tissue]['lbls'].copy().astype(float)
+    img_ii = di_data[ds][idt_tissue]['img'].copy()
+    lbls_ii = di_data[ds][idt_tissue]['lbls'].copy()
     assert img_ii.shape[:2] == lbls_ii.shape[:2]
     timg_ii, tlbls_ii = img_trans([img_ii, lbls_ii])
     timg_ii = torch.unsqueeze(timg_ii,0) / 255
@@ -147,26 +151,26 @@ for ii , rr in df_tt.iterrows():
         cell_ii = np.atleast_3d(lbls_ii[:,:,di_idx[cell]].sum(2))
         cell_ii_bin = np.squeeze(np.where(cell_ii > 0, 1, 0))
         ncell_ii = cell_ii.sum() / fillfac
-        print('~~~~ cell = %s, n=%i ~~~~' % (cell, ncell_ii))
+        #print('~~~~ cell = %s, n=%i ~~~~' % (cell, ncell_ii))
         with torch.no_grad():
             tmp_logits = t2n(di_mdl[cell](timg_ii))
         # Save for later
-        holder_logits[:,:,jj,ii] = tmp_logits
-        holder_lbls[:,:,jj,ii] = cell_ii_bin
+        holder_logits[ii,jj,:,:] = tmp_logits
+        holder_lbls[ii,jj,:,:] = cell_ii_bin
     torch.cuda.empty_cache()
     dtime = time() - stime
     nleft, rate = len(df_tt) - (ii+1), (ii+1) / dtime
     meta = (nleft / rate) / 60
     print('ETA: %.1f minutes (%i of %i)' % (meta, ii+1, len(df_tt)))
-        
+
 # Calculate precision/recall for each cell type
 holder = []
 for jj, cell in enumerate(cells):
     for tt in di_tt:
         print('~~~~ cell = %s, tt=%s ~~~~' % (cell, tt))
         idx_tt = df_tt.query('tt==@tt').idt_tissue.index.values
-        phat_tt = sigmoid(holder_logits[:, :, jj, idx_tt])
-        ybin_tt = holder_lbls[:, :, jj, idx_tt]
+        phat_tt = sigmoid(holder_logits[idx_tt, jj, :, :])
+        ybin_tt = holder_lbls[idx_tt, jj, :, :]
         tmp_df = global_auprc(ybin_tt, phat_tt, n_points=50)
         tmp_df = tmp_df.assign(cell=cell, tt=tt)
         holder.append(tmp_df)
@@ -287,9 +291,117 @@ gg_auroc_tt = (pn.ggplot(res_auc, pn.aes(x='tt',y='auc',color='cell')) +
 gg_save('gg_auroc_tt.png', dir_figures, gg_auroc_tt, 6, 4)
 
 
-
-
 ########################################
 ## --- (5) PROBABILITY CLUSTERING --- ##
+
+from skimage.measure import label
+from sklearn.metrics import r2_score
+
+def rho(x, y):
+    return np.corrcoef(x, y)[0,1]
+
+def get_num_label(arr, connectivity):
+    res = label(input=arr, connectivity=connectivity, return_num=True)[1]
+    return res
+
+nquant = 20
+holder_cell = []
+for jj, cell in enumerate(cells):
+    print('~~~~ cell = %s ~~~~' % (cell))
+    idt_train = df_tt.query('tt=="train"').idt_tissue
+    idt_rest = df_tt.query('tt!="train"').idt_tissue
+    idx_train = idt_train.index.values
+    idx_rest = idt_rest.index.values
+    phat_train = sigmoid(holder_logits[idx_train, jj, :, :])
+    phat_rest = sigmoid(holder_logits[idx_rest, jj, :, :])
+    ntrain, nrest = len(phat_train), len(phat_rest)
+    ybin_train = holder_lbls[idx_train, jj, :, :]
+    thresh_train = np.quantile(phat_train[ybin_train==1], np.linspace(0, 1, nquant)[1:-1])
+    holder = []
+    for thresh in thresh_train:
+        yhat_train = np.where(phat_train >= thresh, 1, 0)
+        yhat_rest = np.where(phat_rest >= thresh, 1, 0)
+        train1 = [get_num_label(yhat_train[i],1) for i in range(ntrain)]
+        train2 = [get_num_label(yhat_train[i],2) for i in range(ntrain)]
+        rest1 = [get_num_label(yhat_rest[i],1) for i in range(nrest)]
+        rest2 = [get_num_label(yhat_rest[i],2) for i in range(nrest)]
+        tmp1 = pd.DataFrame({'idt_tissue':idt_train,'est_1':train1, 'est_2':train2})
+        tmp2 = pd.DataFrame({'idt_tissue':idt_rest,'est_1':rest1, 'est_2':rest2})
+        tmp3 = pd.concat([tmp1, tmp2]).assign(thresh=thresh)
+        holder.append(tmp3)
+    # Merge
+    tmp4 = pd.concat(holder).reset_index(None, True).assign(cell=cell)
+    holder_cell.append(tmp4)
+# Combine all results
+res_cell = pd.concat(holder_cell).melt(['cell','idt_tissue','thresh'],None,'conn')
+res_cell.conn = res_cell.conn.str.replace('[^0-9]','',regex=True)#.astype(int)
+# Merge with ground truth
+res_cell = res_cell.merge(df_cells_long,'left',['idt_tissue','cell'])
+res_cell = res_cell.merge(df_tt[['idt_tissue','tt']],'left')
+res_cell.tt = pd.Categorical(res_cell.tt,list(di_tt)).map(di_tt)
+res_cell.cell = res_cell.cell.map(di_cell)
+# Spearman's
+rho_cell = res_cell.groupby(['cell','tt','conn','thresh']).apply(lambda x: r2_score(x.act, x.value))
+rho_cell = rho_cell.reset_index().rename(columns={0:'rho'})
+# Pick maximum correlation by cell type
+thresh_star = rho_cell.loc[rho_cell.query('tt=="Val"').groupby(['cell']).apply(lambda x: x.rho.idxmax())]
+thresh_star = thresh_star.drop(columns=['rho','tt']).reset_index(None,True)
+# Get actual data
+res_cell_star = res_cell.merge(thresh_star,'inner',['cell','conn','thresh'])
+
+# Get the confidence intervals
+res_cell_perf = res_cell_star.groupby(cn_gg).apply(lambda x: 
+        pd.Series({'r2':r2_score(x.act, x.value), 'rho':rho(x.act, x.value)})).reset_index()
+res_cell_perf = res_cell_perf.melt(cn_gg,None,'metric')
+
+n_bs = 250
+alpha = 0.05
+cn_gg = ['cell','tt']
+holder_bs = []
+for i in range(n_bs):
+    tmp_df = res_cell_star.groupby(cn_gg).sample(frac=1,replace=True, random_state=i)
+    tmp_df = tmp_df.groupby(cn_gg).apply(lambda x: 
+        pd.Series({'r2':r2_score(x.act, x.value), 'rho':rho(x.act, x.value)}))
+    tmp_df = tmp_df.reset_index().assign(bidx=i)
+    holder_bs.append(tmp_df)
+tmp_df = pd.concat(holder_bs).melt(cn_gg+['bidx'],None,'metric').groupby(cn_gg+['metric'])
+tmp_df = tmp_df.value.quantile([alpha/2, 1-alpha/2]).reset_index().pivot_table('value',cn_gg+['metric'],'level_3')
+tmp_df = tmp_df.reset_index().rename(columns={alpha/2:'lb', 1-alpha/2:'ub'})
+res_cell_perf = res_cell_perf.merge(tmp_df)
+
+# Visualize scatter
+gg_r2_star = (pn.ggplot(res_cell_star,pn.aes(x='value',y='act',color='tt')) + 
+    pn.theme_bw() + pn.geom_point() + 
+    pn.scale_color_discrete(name='Dataset') + 
+    pn.geom_abline(slope=1,intercept=0,color='black',linetype='--') + 
+    pn.facet_wrap('~cell+tt',scales='free', nrow=2) + 
+    pn.theme(subplots_adjust={'wspace': 0.20, 'hspace':0.30}) + 
+    pn.guides(color=False) + 
+    pn.labs(x='Predicted',y='Actual'))
+gg_save('gg_r2_star.png', dir_figures, gg_r2_star, 13, 6)
+
+# Show the metrics
+posd = pn.position_dodge(0.5)
+gg_perf_star = (pn.ggplot(res_cell_perf,pn.aes(x='metric',y='value',color='cell')) + 
+    pn.theme_bw() + pn.geom_point(position=posd) + 
+    pn.geom_linerange(pn.aes(ymin='lb',ymax='ub'),position=posd) + 
+    pn.scale_color_discrete(name='Cell') + 
+    pn.labs(y='Percent',x='Metric') + 
+    pn.geom_hline(yintercept=0,linetype='--') + 
+    pn.ggtitle('Linerange shows 95% CI') + 
+    pn.theme(subplots_adjust={'wspace': 0.25}) + 
+    pn.facet_wrap('~tt',scales='free_y',nrow=1))
+gg_save('gg_perf_star.png', dir_figures, gg_perf_star, 12, 2.5)
+
+
+# Make figures
+gg_rho_cell = (pn.ggplot(rho_cell,pn.aes(x='thresh',y='rho',color='tt',linetype='conn')) + 
+    pn.theme_bw() + pn.geom_line() + 
+    pn.labs(x='Thresh',y='Spearman Rho') + 
+    pn.facet_wrap('~cell',nrow=1,scales='free_x'))
+gg_save('gg_rho_cell.png', dir_figures, gg_rho_cell, 10, 4)
+
+
+
 
 

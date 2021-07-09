@@ -20,7 +20,7 @@ def global_auroc(Ytrue, Ypred):  # Ytrue, Ypred = Ybin_val.copy(), P_val.copy()
 def global_auprc(Ytrue, Ypred, n_points=50):
     check_YP_same(Ytrue, Ypred, ybin=True)
     idx_Y = (Ytrue == 1)
-    thresh_seq = np.quantile(Ypred, np.linspace(0, 1, n_points)[1:-1])
+    thresh_seq = np.quantile(Ypred[idx_Y], np.linspace(0, 1, n_points)[1:-1])
     holder = np.zeros([n_points-2, 3])
     for i, thresh in enumerate(thresh_seq):
         idx_thresh = Ypred > thresh

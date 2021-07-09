@@ -187,8 +187,7 @@ if check_int:  # Check that intercept approximates cell count
             print('run time = %.3f' % (time() - tnow))
         tens = enc_tens([di_data[idt]['img'],di_data[idt]['lbls']])[0]
         # First channel should be batch size
-        tens = torch.unsqueeze(tens, dim=0) / pixel_max
-        # tens = tens.reshape([1, n_channels, n_pixels, n_pixels]) / pixel_max
+        tens = torch.unsqueeze(tens, dim=0).float() / pixel_max
         with torch.no_grad():
             logits = t2n(mdl(tens))
         ncl = logits.mean()
