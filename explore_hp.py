@@ -44,13 +44,14 @@ for tt in ['eosin','inflam']:
         with open(path_fn, 'rb') as handle:
             di = pickle.load(handle)
         # Extract the hyperparamets
-        di['hp'].set_index('hp', inplace=True)
-        lr = float(di['hp'].loc['lr'])
-        p = int(di['hp'].loc['p'])
-        batch = int(di['hp'].loc['batch'])
-        # assign and save
-        holder_ce.append(di['ce_auc'].assign(cell=tt, lr=lr, p=p, batch=batch))
-        holder_pr.append(di['pr'].assign(cell=tt, lr=lr, p=p, batch=batch))
+        df_hp = di['hp']
+        if len(df_hp) == 1:
+            lr = df_hp['lr'][0]
+            p = df_hp['p'][0]
+            batch = df_hp['batch'][0]
+            # assign and save
+            holder_ce.append(di['ce_auc'].assign(cell=tt, lr=lr, p=p, batch=batch))
+            holder_pr.append(di['pr'].assign(cell=tt, lr=lr, p=p, batch=batch))
         del di
 gc.collect()
 # Merge
@@ -100,9 +101,11 @@ for metric in ['ce','auc']:
         p9.labs(x='Epoch',y='Value (100==epoch 1)'))
     gg_save(tmp_fn, dir_figures, tmp_gg, 10, 10)
 
+###############################
+## --- (3) FIND BEST AUC --- ##
 
-
-
+best_auc = dat_ce.query('metric=="auc"').reset_index(None,True)
+print(best_auc.loc[best_auc.groupby('cell').value.idxmax()])
 
 
 

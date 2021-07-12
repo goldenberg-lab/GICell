@@ -1,12 +1,11 @@
 # Script to analyze performance of model on test set with both pixel-wise and clustered performance
 
 import argparse
-import enum
-from plotnine.facets.facet_wrap import facet_wrap
-from plotnine.geoms.geom_hline import geom_hline
-from plotnine.labels import ggtitle
 
-from plotnine.scales.scale_manual import scale_linetype_manual
+from plotnine.geoms.geom_hline import geom_hline
+from plotnine.geoms.geom_point import geom_point
+from plotnine.labels import ggtitle
+from plotnine.scales.scale_xy import scale_y_continuous
 parser = argparse.ArgumentParser()
 parser.add_argument('--mdl_hash', type=str, help='How many points to pad around pixel annotation point')
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
@@ -108,7 +107,6 @@ di_data = {ds: hickle.load(os.path.join(dir_output, 'annot_'+ds+'.pickle')) for 
 
 # (ii) Aggregate cell counts
 df_cells = pd.read_csv(os.path.join(dir_output, 'df_cells.csv'))
-df_cells_long = df_cells.melt(['ds','idt_tissue'],None,'cell','act')
 
 # Check alignment
 assert df_cells.groupby('ds').apply(lambda x: no_diff(x.idt_tissue,list(di_data[x.ds.iloc[0]]))).all()
@@ -116,6 +114,7 @@ assert df_cells.groupby('ds').apply(lambda x: no_diff(x.idt_tissue,list(di_data[
 # Keep only eosin's + inflam
 df_cells = df_cells[['ds','idt_tissue','eosinophil']].assign(inflam=df_cells[inflam_cells].sum(1)).rename(columns={'eosinophil':'eosin'})
 print(df_cells.assign(sparse=lambda x: x.eosin == 0).groupby('ds').sparse.mean())
+df_cells_long = df_cells.melt(['ds','idt_tissue'],None,'cell','act')
 
 # (iii) Train/val/test
 tmp1 = pd.read_csv(os.path.join(dir_output, 'train_val_test.csv'))
@@ -125,6 +124,7 @@ tmp2 = df_cells.merge(tmp2,'right').assign(is_zero=lambda x: x.eosin == 0)
 tmp2.drop(columns = cells, inplace=True)
 df_tt = pd.concat([tmp1, tmp2], axis=0).reset_index(None, True)
 print(df_tt.groupby('ds').is_zero.mean())
+df_tt_idt = df_tt[['idt_tissue','tt']].copy()
 
 #############################################
 ## --- (3) PIXEL-WISE PRECISION/RECALL --- ##
@@ -304,85 +304,171 @@ def get_num_label(arr, connectivity):
     res = label(input=arr, connectivity=connectivity, return_num=True)[1]
     return res
 
+# arr = yhat_rest[i].copy(); connectivity=1; idx=idt_rest.values[i]
+def lbl_freq(arr, connectivity, idx=None):
+    clust_grps = label(arr, connectivity=connectivity)
+    freq = pd.value_counts(clust_grps[np.nonzero(clust_grps)])
+    if len(freq) == 0:
+        freq = pd.DataFrame({'clust':None, 'n':0},index=[0])
+    else:
+        freq = freq.reset_index().rename(columns={'index':'clust',0:'n'})
+    if idx is not None:
+        freq.insert(0,'idx',idx)
+    return freq
+
+
+conn_seq = [1, 2]
+
 nquant = 20
-holder_cell = []
+idt_train = df_tt.query('tt=="train"').idt_tissue
+idt_rest = df_tt.query('tt!="train"').idt_tissue
+idx_train = idt_train.index.values
+idx_rest = idt_rest.index.values
+# Loop over
+holder = []
 for jj, cell in enumerate(cells):
-    print('~~~~ cell = %s ~~~~' % (cell))
-    idt_train = df_tt.query('tt=="train"').idt_tissue
-    idt_rest = df_tt.query('tt!="train"').idt_tissue
-    idx_train = idt_train.index.values
-    idx_rest = idt_rest.index.values
     phat_train = sigmoid(holder_logits[idx_train, jj, :, :])
     phat_rest = sigmoid(holder_logits[idx_rest, jj, :, :])
     ntrain, nrest = len(phat_train), len(phat_rest)
     ybin_train = holder_lbls[idx_train, jj, :, :]
     thresh_train = np.quantile(phat_train[ybin_train==1], np.linspace(0, 1, nquant)[1:-1])
-    holder = []
-    for thresh in thresh_train:
+    for kk, thresh in enumerate(thresh_train):
+        print('~~~~ cell = %s, thresh %i of %i ~~~~' % (cell, kk+1, nquant))
         yhat_train = np.where(phat_train >= thresh, 1, 0)
         yhat_rest = np.where(phat_rest >= thresh, 1, 0)
-        train1 = [get_num_label(yhat_train[i],1) for i in range(ntrain)]
-        train2 = [get_num_label(yhat_train[i],2) for i in range(ntrain)]
-        rest1 = [get_num_label(yhat_rest[i],1) for i in range(nrest)]
-        rest2 = [get_num_label(yhat_rest[i],2) for i in range(nrest)]
-        tmp1 = pd.DataFrame({'idt_tissue':idt_train,'est_1':train1, 'est_2':train2})
-        tmp2 = pd.DataFrame({'idt_tissue':idt_rest,'est_1':rest1, 'est_2':rest2})
-        tmp3 = pd.concat([tmp1, tmp2]).assign(thresh=thresh)
-        holder.append(tmp3)
-    # Merge
-    tmp4 = pd.concat(holder).reset_index(None, True).assign(cell=cell)
-    holder_cell.append(tmp4)
+        for conn in conn_seq:
+            tmp_train = pd.concat([lbl_freq(yhat_train[i], conn, idt) for i, idt in zip(range(ntrain),idt_train)])
+            tmp_rest = pd.concat([lbl_freq(yhat_rest[i], conn, idt) for i, idt in zip(range(nrest),idt_rest)])
+            # Merge and annotate
+            tmp_both = pd.concat([tmp_train, tmp_rest], axis=0).assign(cell=cell, thresh=thresh, conn=conn)
+            holder.append(tmp_both)
 # Combine all results
-res_cell = pd.concat(holder_cell).melt(['cell','idt_tissue','thresh'],None,'conn')
-res_cell.conn = res_cell.conn.str.replace('[^0-9]','',regex=True)#.astype(int)
-# Merge with ground truth
-res_cell = res_cell.merge(df_cells_long,'left',['idt_tissue','cell'])
-res_cell = res_cell.merge(df_tt[['idt_tissue','tt']],'left')
-res_cell.tt = pd.Categorical(res_cell.tt,list(di_tt)).map(di_tt)
-res_cell.cell = res_cell.cell.map(di_cell)
-# Spearman's
-rho_cell = res_cell.groupby(['cell','tt','conn','thresh']).apply(lambda x: r2_score(x.act, x.value))
-rho_cell = rho_cell.reset_index().rename(columns={0:'rho'})
-# Pick maximum correlation by cell type
-thresh_star = rho_cell.loc[rho_cell.query('tt=="Val"').groupby(['cell']).apply(lambda x: x.rho.idxmax())]
-thresh_star = thresh_star.drop(columns=['rho','tt']).reset_index(None,True)
-# Get actual data
-res_cell_star = res_cell.merge(thresh_star,'inner',['cell','conn','thresh'])
+res_cell = pd.concat(holder).reset_index(None, True)
+# Merge with dataset type
+res_cell.rename(columns={'idx':'idt_tissue'}, inplace=True)
+res_cell = res_cell.merge(df_tt_idt)
+# res_cell = res_cell.merge(df_cells_long.drop(columns='ds'))
 
-# Get the confidence intervals
-res_cell_perf = res_cell_star.groupby(cn_gg).apply(lambda x: 
-        pd.Series({'r2':r2_score(x.act, x.value), 'rho':rho(x.act, x.value)})).reset_index()
-res_cell_perf = res_cell_perf.melt(cn_gg,None,'metric')
 
-n_bs = 250
-alpha = 0.05
-cn_gg = ['cell','tt']
-holder_bs = []
-for i in range(n_bs):
-    tmp_df = res_cell_star.groupby(cn_gg).sample(frac=1,replace=True, random_state=i)
-    tmp_df = tmp_df.groupby(cn_gg).apply(lambda x: 
-        pd.Series({'r2':r2_score(x.act, x.value), 'rho':rho(x.act, x.value)}))
-    tmp_df = tmp_df.reset_index().assign(bidx=i)
-    holder_bs.append(tmp_df)
-tmp_df = pd.concat(holder_bs).melt(cn_gg+['bidx'],None,'metric').groupby(cn_gg+['metric'])
-tmp_df = tmp_df.value.quantile([alpha/2, 1-alpha/2]).reset_index().pivot_table('value',cn_gg+['metric'],'level_3')
-tmp_df = tmp_df.reset_index().rename(columns={alpha/2:'lb', 1-alpha/2:'ub'})
-res_cell_perf = res_cell_perf.merge(tmp_df)
+# Loop over each combination and the relationship between the n cut-off
+q_seq = np.arange(0.05,1,0.05)
+holder = []
+for jj, cell in enumerate(cells):
+    tmp_df1 = res_cell.query('cell==@cell')
+    thresh_train = tmp_df1.thresh.unique()
+    for kk, thresh in enumerate(thresh_train):
+        for conn in conn_seq:
+            print('cell=%s, thresh=%.5f, conn=%i' % (cell, thresh, conn))
+            tmp_df2 = tmp_df1.query('conn==@conn & thresh==@thresh').reset_index(None, True)
+            n_seq = np.sort(tmp_df2.query('tt=="val"').n.unique())
+            if len(n_seq) > len(q_seq):
+                n_seq = np.quantile(n_seq, q_seq)
+            for n in n_seq:
+                tmp_n = tmp_df2.groupby('idt_tissue').apply(lambda x: np.sum(x.n >= n)).reset_index()
+                tmp_n = tmp_n.rename(columns={0:'est'}).assign(cell=cell)
+                tmp_n = tmp_n.merge(df_cells_long).merge(df_tt_idt)
+                tmp_n = tmp_n.groupby('tt').apply(lambda x: pd.Series({'rho':rho(x.act, x.est),'r2':r2_score(x.act, x.est)}))
+                tmp_n = tmp_n.reset_index().assign(cell=cell,thresh=kk,conn=conn,n=n)
+                holder.append(tmp_n)
+# Merge and visually inspect trade-off
+res_rho = pd.concat(holder).reset_index(None,True)
+res_rho.tt = pd.Categorical(res_rho.tt,list(di_tt)).map(di_tt)
+# Melt on rho vs r2
+res_rho = res_rho.melt(['tt','cell','thresh','conn','n'],None,'msr')
+# Clip the r-squared
+res_rho.value = res_rho.value.clip(-1,1)
 
-# Visualize scatter
-gg_r2_star = (pn.ggplot(res_cell_star,pn.aes(x='value',y='act',color='tt')) + 
+#########################
+## --- (6) FIGURES --- ##
+
+# --- (i) Find the "best" point for each cell/dataset --- #
+res_rho_star = res_rho.groupby(['cell','msr','thresh','conn','n']).value.mean().reset_index()
+res_rho_star = res_rho_star.loc[res_rho_star.groupby(['cell','msr']).apply(lambda x: x.value.idxmax())]
+res_rho_star = res_rho.merge(res_rho_star.drop(columns='value'),'inner')
+
+for msr in ['r2','rho']:
+    tmp_df = res_rho.query('msr == @msr').dropna()
+    tmp_star = res_rho_star.query('msr == @msr')
+    tmp_fn = 'gg_thresh_n_' + msr + '.png'
+    tmp_gg = (pn.ggplot(tmp_df, pn.aes(x='n',y='value',color='tt')) + 
+        pn.theme_bw() + pn.geom_line() + 
+        pn.scale_y_continuous(limits=[-1,1]) + 
+        pn.facet_wrap('~cell + thresh',scales='free_x') + 
+        pn.scale_color_discrete(name='Dataset') + 
+        # pn.scale_shape_discrete(name='Connectivity') + 
+        pn.geom_hline(yintercept=0,linetype='--') + 
+        pn.geom_hline(yintercept=0.5,linetype='--',color='darkgreen') + 
+        pn.ggtitle('Measure = %s' % msr) + 
+        pn.geom_point(pn.aes(x='n',y='value',color='tt'),data=tmp_star,inherit_aes=False,size=2) + 
+        pn.theme(subplots_adjust={'hspace': 0.5, 'wspace': 0.1}) +
+        pn.labs(y=msr,x='Minimum cell count'))
+    gg_save(tmp_fn, dir_figures, tmp_gg, 15, 15)
+
+
+# --- (ii) Visualize the "best" scatter --- #
+holder = []
+for jj, cell in enumerate(cells):
+    phat_train = sigmoid(holder_logits[idx_train, jj, :, :])
+    phat_rest = sigmoid(holder_logits[idx_rest, jj, :, :])
+    tmp_star = res_rho_star.query('cell == @cell')
+    ybin_train = holder_lbls[idx_train, jj, :, :]
+    thresh_train = np.quantile(phat_train[ybin_train==1], np.linspace(0, 1, nquant)[1:-1])
+    for msr in tmp_star.msr.unique():
+        print('~~~~ cell = %s, msr=%s ~~~~' % (cell, msr))
+        tmp_star_msr = tmp_star.query('msr==@msr').reset_index(None, True)
+        thresh_idx_star = tmp_star_msr.thresh[0]
+        n_star = tmp_star_msr.n[0]
+        conn_star = tmp_star_msr.conn[0]
+        thresh_star = thresh_train[thresh_idx_star]
+        # Apply threshold
+        yhat_train = np.where(phat_train >= thresh_star, 1, 0)
+        yhat_rest = np.where(phat_rest >= thresh_star, 1, 0)
+        # Connect connectivity map
+        tmp_train = pd.concat([lbl_freq(yhat_train[i], conn_star, idt) for i, idt in zip(range(ntrain),idt_train)])
+        tmp_rest = pd.concat([lbl_freq(yhat_rest[i], conn_star, idt) for i, idt in zip(range(nrest),idt_rest)])
+        tmp_both = pd.concat([tmp_train, tmp_rest], axis=0)
+        tmp_both = tmp_both.groupby('idx').apply(lambda x: np.sum(x.n >= n_star))
+        tmp_both = tmp_both.reset_index().rename(columns={'idx':'idt_tissue',0:'est'})
+        tmp_both = tmp_both.assign(cell=cell).merge(df_cells_long).merge(df_tt_idt)
+        tmp_both = tmp_both.assign(thresh=thresh_star, n=n_star, conn=conn_star, msr=msr)
+        holder.append(tmp_both)
+res_scatter = pd.concat(holder).reset_index(None, True)
+res_scatter.tt = pd.Categorical(res_scatter.tt,list(di_tt)).map(di_tt)
+
+gg_scatter_star = (pn.ggplot(res_scatter,pn.aes(x='est',y='act',color='tt')) + 
     pn.theme_bw() + pn.geom_point() + 
     pn.scale_color_discrete(name='Dataset') + 
     pn.geom_abline(slope=1,intercept=0,color='black',linetype='--') + 
-    pn.facet_wrap('~cell+tt',scales='free', nrow=2) + 
-    pn.theme(subplots_adjust={'wspace': 0.20, 'hspace':0.30}) + 
+    pn.facet_wrap('~cell+msr+tt',scales='free', nrow=4) + 
+    pn.theme(subplots_adjust={'wspace': 0.20, 'hspace':0.50}) + 
     pn.guides(color=False) + 
     pn.labs(x='Predicted',y='Actual'))
-gg_save('gg_r2_star.png', dir_figures, gg_r2_star, 13, 6)
+gg_save('gg_scatter_star.png', dir_figures, gg_scatter_star, 13, 12)
+
+
+# --- (iii) Point estimate and CI --- #
+
+n_bs = 250
+alpha = 0.05
+cn_gg = ['cell','tt','msr']
+holder_bs = []
+for i in range(n_bs):
+    for msr in res_scatter.msr.unique():
+        tmp_msr = res_scatter.query('msr == @msr')
+        tmp_df = tmp_msr.groupby(cn_gg).sample(frac=1,replace=True, random_state=i)
+        tmp_df = tmp_df.groupby(cn_gg).apply(lambda x: 
+            pd.Series({'r2':r2_score(x.act, x.est), 'rho':rho(x.act, x.est)}))
+        tmp_df = tmp_df[msr].reset_index().rename(columns={msr:'value'}).assign(bidx=i)
+        holder_bs.append(tmp_df)
+# Merge
+tmp_df = pd.concat(holder_bs).groupby(cn_gg).value.quantile([alpha/2, 1-alpha/2])
+tmp_df = tmp_df.reset_index().pivot_table('value',cn_gg,'level_3')
+tmp_df = tmp_df.reset_index().rename(columns={alpha/2:'lb', 1-alpha/2:'ub'})
+res_cell_perf = res_rho_star.merge(tmp_df)
 
 # Show the metrics
 posd = pn.position_dodge(0.5)
-gg_perf_star = (pn.ggplot(res_cell_perf,pn.aes(x='metric',y='value',color='cell')) + 
+gg_perf_star = (pn.ggplot(res_cell_perf,pn.aes(x='msr',y='value',color='cell')) + 
     pn.theme_bw() + pn.geom_point(position=posd) + 
     pn.geom_linerange(pn.aes(ymin='lb',ymax='ub'),position=posd) + 
     pn.scale_color_discrete(name='Cell') + 
@@ -393,13 +479,6 @@ gg_perf_star = (pn.ggplot(res_cell_perf,pn.aes(x='metric',y='value',color='cell'
     pn.facet_wrap('~tt',scales='free_y',nrow=1))
 gg_save('gg_perf_star.png', dir_figures, gg_perf_star, 12, 2.5)
 
-
-# Make figures
-gg_rho_cell = (pn.ggplot(rho_cell,pn.aes(x='thresh',y='rho',color='tt',linetype='conn')) + 
-    pn.theme_bw() + pn.geom_line() + 
-    pn.labs(x='Thresh',y='Spearman Rho') + 
-    pn.facet_wrap('~cell',nrow=1,scales='free_x'))
-gg_save('gg_rho_cell.png', dir_figures, gg_rho_cell, 10, 4)
 
 
 
