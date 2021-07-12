@@ -65,8 +65,15 @@ dat_pr.to_csv(os.path.join(dir_output, 'dat_hp_pr.csv'),index=False)
 # dat_ce.insert(0,'hp', hp_2_str(dat_ce, cn_hp))
 # dat_pr.insert(0,'hp', hp_2_str(dat_pr, cn_hp))
 
+###############################
+## --- (2) FIND BEST AUC --- ##
+
+best_auc = dat_ce.query('metric=="auc"').reset_index(None,True)
+print(best_auc.loc[best_auc.groupby('cell').value.idxmax()])
+
+
 ##############################
-## --- (2) PLOT RESULTS --- ##
+## --- (3) PLOT RESULTS --- ##
 
 epoch_min = 10
 cn_gg = ['cell']+cn_hp
@@ -100,12 +107,6 @@ for metric in ['ce','auc']:
         p9.facet_grid('lr+p~batch',labeller=p9.label_both) + 
         p9.labs(x='Epoch',y='Value (100==epoch 1)'))
     gg_save(tmp_fn, dir_figures, tmp_gg, 10, 10)
-
-###############################
-## --- (3) FIND BEST AUC --- ##
-
-best_auc = dat_ce.query('metric=="auc"').reset_index(None,True)
-print(best_auc.loc[best_auc.groupby('cell').value.idxmax()])
 
 
 

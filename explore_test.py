@@ -1,25 +1,20 @@
 # Script to analyze performance of model on test set with both pixel-wise and clustered performance
 
 import argparse
-
-from plotnine.geoms.geom_hline import geom_hline
-from plotnine.geoms.geom_point import geom_point
-from plotnine.labels import ggtitle
-from plotnine.scales.scale_xy import scale_y_continuous
 parser = argparse.ArgumentParser()
-parser.add_argument('--mdl_hash', type=str, help='How many points to pad around pixel annotation point')
+# parser.add_argument('--mdl_hash', type=str, help='How many points to pad around pixel annotation point')
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
 args = parser.parse_args()
 mdl_hash = args.save_model
 
 # # For debugging
 # mdl_hash = None
-mdl_hash = '4424974300780924119'
+# mdl_hash = '4424974300780924119'
 nfill = 1
 
-# Remove .pkl if there
-if mdl_hash is not None:
-    mdl_hash = mdl_hash.split('.')[0]
+# # Remove .pkl if there
+# if mdl_hash is not None:
+#     mdl_hash = mdl_hash.split('.')[0]
 
 import os
 import numpy as np
@@ -31,12 +26,16 @@ from cells import valid_cells, inflam_cells
 from funs_stats import global_auroc, global_auprc
 import plotnine as pn
 from scipy import stats
+from skimage.measure import label
+from sklearn.metrics import r2_score
+
 
 dir_base = find_dir_cell()
 dir_output = os.path.join(dir_base, 'output')
 dir_figures = os.path.join(dir_output, 'figures')
 lst_dir = [dir_output, dir_figures]
 assert all([os.path.exists(z) for z in lst_dir])
+dir_best = os.path.join(dir_output, 'best')
 dir_checkpoint = os.path.join(dir_output, 'checkpoint')
 
 idx_eosin = np.where(pd.Series(valid_cells).isin(['eosinophil']))[0]
@@ -60,35 +59,44 @@ fillfac = (2 * nfill + 1) ** 2
 print('nfill: %i, fillfac: x%i' % (nfill, fillfac))
 
 
+def rho(x, y):
+    return np.corrcoef(x, y)[0,1]
+
+def get_num_label(arr, connectivity):
+    res = label(input=arr, connectivity=connectivity, return_num=True)[1]
+    return res
+
+# arr = yhat_rest[i].copy(); connectivity=1; idx=idt_rest.values[i]
+def lbl_freq(arr, connectivity, idx=None):
+    clust_grps = label(arr, connectivity=connectivity)
+    freq = pd.value_counts(clust_grps[np.nonzero(clust_grps)])
+    if len(freq) == 0:
+        freq = pd.DataFrame({'clust':None, 'n':0},index=[0])
+    else:
+        freq = freq.reset_index().rename(columns={'index':'clust',0:'n'})
+    if idx is not None:
+        freq.insert(0,'idx',idx)
+    return freq
+
+
 ############################
 ## --- (1) LOAD MODEL --- ##
 
 cells = ['inflam', 'eosin']
 cn_hp = ['lr', 'p', 'batch']
 
-# Find the "best" model is no mdl_hash provided
-if mdl_hash is None:
-    print('Finding "best" model')
-    dat_ce = pd.read_csv(os.path.join(dir_output, 'dat_hp_ce.csv'))
-    dat_ce = dat_ce.assign(value=lambda x: np.where(x.metric=='ce',-x.value,x.value))
-    dat_auc = dat_ce.query('metric == "auc"')
-    dat_auc_best = dat_auc.groupby(cn_hp).value.max().reset_index()
-    dat_auc_hp = dat_auc_best.loc[[dat_auc_best.value.idxmax()]]
-    fn_mdl = hash_hp(dat_auc_hp, method='hash_array')
-    fn_mdl = str(fn_mdl) + '.pkl'
-    # lr, p, batch = list(dat_auc_hp[cn_hp].itertuples(index=False,name=None))[0]
-else:
-    fn_mdl = mdl_hash + '.pkl'
 
-# Load in mdls
-di_fn = dict(zip(cells,[os.path.join(os.path.join(dir_checkpoint,cell),fn_mdl) for cell in cells]))
+# Load in the "best" models for each typefn_best = pd.Series(os.listdir(dir_best))
+fn_best = fn_best.str.split('\\_',1,True)
+fn_best.rename(columns={0:'cell',1:'fn'},inplace=True)
+di_fn = dict(zip(fn_best.cell,fn_best.fn))
+di_fn = {k:os.path.join(dir_best,k+'_'+v) for k,v in di_fn.items()}
 assert all([os.path.exists(v) for v in di_fn.values()])
 di_mdl = {k1: {k2:v2 for k2, v2 in read_pickle(v1).items() if k2 in ['mdl','hp']} for k1, v1 in di_fn.items()}
-dat_hp = pd.concat([v['hp'] for v in di_mdl.values()])
-assert np.all(dat_hp.var(0) == 0)
-lr, p, batch = dat_hp.mean(0)[cn_hp].to_list()
+dat_hp = pd.concat([v['hp'].assign(cell=k) for k,v in di_mdl.items()])
+
 print('---- BEST HYPERPARAMETERS ----')
-print('lr = %.3f, p = %i, batch = %i' % (lr, p, batch))
+print(dat_hp)
 # Drop the hp and keep only model
 di_mdl = {k: v['mdl'] for k, v in di_mdl.items()}
 di_mdl = {k: v.eval() for k, v in di_mdl.items()}
@@ -126,70 +134,8 @@ df_tt = pd.concat([tmp1, tmp2], axis=0).reset_index(None, True)
 print(df_tt.groupby('ds').is_zero.mean())
 df_tt_idt = df_tt[['idt_tissue','tt']].copy()
 
-#############################################
-## --- (3) PIXEL-WISE PRECISION/RECALL --- ##
-
-# Loop through and save all pixel-wise probabilities
-h, w, c = di_data[df_tt.ds[0]][df_tt.idt_tissue[0]]['img'].shape
-assert h == w
-
-# Numpy array to store results: (h x w x # cells x # patients)
-holder_logits = np.zeros([len(df_tt), len(cells), h, w])
-holder_lbls = holder_logits.copy()
-
-stime = time()
-for ii , rr in df_tt.iterrows():
-    ds, idt_tissue, tt = rr['ds'], rr['idt_tissue'], rr['tt']
-    print('Row %i of %i' % (ii+1, len(df_tt)))
-    # Load image/lbls
-    img_ii = di_data[ds][idt_tissue]['img'].copy()
-    lbls_ii = di_data[ds][idt_tissue]['lbls'].copy()
-    assert img_ii.shape[:2] == lbls_ii.shape[:2]
-    timg_ii, tlbls_ii = img_trans([img_ii, lbls_ii])
-    timg_ii = torch.unsqueeze(timg_ii,0) / 255
-    for jj, cell in enumerate(cells):
-        cell_ii = np.atleast_3d(lbls_ii[:,:,di_idx[cell]].sum(2))
-        cell_ii_bin = np.squeeze(np.where(cell_ii > 0, 1, 0))
-        ncell_ii = cell_ii.sum() / fillfac
-        #print('~~~~ cell = %s, n=%i ~~~~' % (cell, ncell_ii))
-        with torch.no_grad():
-            tmp_logits = t2n(di_mdl[cell](timg_ii))
-        # Save for later
-        holder_logits[ii,jj,:,:] = tmp_logits
-        holder_lbls[ii,jj,:,:] = cell_ii_bin
-    torch.cuda.empty_cache()
-    dtime = time() - stime
-    nleft, rate = len(df_tt) - (ii+1), (ii+1) / dtime
-    meta = (nleft / rate) / 60
-    print('ETA: %.1f minutes (%i of %i)' % (meta, ii+1, len(df_tt)))
-
-# Calculate precision/recall for each cell type
-holder = []
-for jj, cell in enumerate(cells):
-    for tt in di_tt:
-        print('~~~~ cell = %s, tt=%s ~~~~' % (cell, tt))
-        idx_tt = df_tt.query('tt==@tt').idt_tissue.index.values
-        phat_tt = sigmoid(holder_logits[idx_tt, jj, :, :])
-        ybin_tt = holder_lbls[idx_tt, jj, :, :]
-        tmp_df = global_auprc(ybin_tt, phat_tt, n_points=50)
-        tmp_df = tmp_df.assign(cell=cell, tt=tt)
-        holder.append(tmp_df)
-res_pr = pd.concat(holder).melt(['cell','tt','thresh'],None,'msr')
-res_pr.tt = pd.Categorical(res_pr.tt, list(di_tt)).map(di_tt)
-res_pr.cell = res_pr.cell.map(di_cell)
-
-# Make a plot
-gg_auprc = (pn.ggplot(res_pr, pn.aes(x='thresh',y='value',color='tt',linetype='msr')) + 
-    pn.theme_bw() + pn.geom_line() + 
-    pn.facet_wrap('~cell',nrow=1,scales='free_x') + 
-    pn.scale_color_discrete(name='Dataset') + 
-    pn.scale_linetype_manual(name='Measure',labels=['Precision','Recall'],values=['solid','dashed']) + 
-    pn.labs(y='Percent',x='Threshold'))
-gg_save('gg_auprc.png', dir_figures, gg_auprc, 10, 4)
-
-
 #######################################
-## --- (4) INFERENCE STABILITY --- ##
+## --- (3) INFERENCE STABILITY --- ##
 
 stime = time()
 holder = []
@@ -207,7 +153,7 @@ for ii , rr in df_tt.iterrows():
         cell_ii = np.atleast_3d(lbls_ii[:,:,di_idx[cell]].sum(2))
         cell_ii_bin = np.squeeze(np.where(cell_ii > 0, 1, 0))
         # Get all rotations
-        enc_all = all_img_flips(img_lbl=[img_ii, cell_ii], enc_tens=img_trans)
+        enc_all = all_img_flips(img_lbl=[img_ii, cell_ii], enc_tens=img_trans, tol=0.1)
         enc_all.apply_flips()
         enc_all.enc2tensor()
         # To make sure GPU doesn't go over call in each batch
@@ -290,32 +236,70 @@ gg_auroc_tt = (pn.ggplot(res_auc, pn.aes(x='tt',y='auc',color='cell')) +
  pn.scale_color_discrete(name='Type',labels=['Eosinophil','Inflammatory']))
 gg_save('gg_auroc_tt.png', dir_figures, gg_auroc_tt, 6, 4)
 
+#############################################
+## --- (4) PIXEL-WISE PRECISION/RECALL --- ##
+
+# Loop through and save all pixel-wise probabilities
+h, w, c = di_data[df_tt.ds[0]][df_tt.idt_tissue[0]]['img'].shape
+assert h == w
+
+# Numpy array to store results: (h x w x # cells x # patients)
+holder_logits = np.zeros([len(df_tt), len(cells), h, w])
+holder_lbls = holder_logits.copy()
+
+stime = time()
+for ii , rr in df_tt.iterrows():
+    ds, idt_tissue, tt = rr['ds'], rr['idt_tissue'], rr['tt']
+    print('Row %i of %i' % (ii+1, len(df_tt)))
+    # Load image/lbls
+    img_ii = di_data[ds][idt_tissue]['img'].copy()
+    lbls_ii = di_data[ds][idt_tissue]['lbls'].copy()
+    assert img_ii.shape[:2] == lbls_ii.shape[:2]
+    timg_ii, tlbls_ii = img_trans([img_ii, lbls_ii])
+    timg_ii = torch.unsqueeze(timg_ii,0) / 255
+    for jj, cell in enumerate(cells):
+        cell_ii = np.atleast_3d(lbls_ii[:,:,di_idx[cell]].sum(2))
+        cell_ii_bin = np.squeeze(np.where(cell_ii > 0, 1, 0))
+        ncell_ii = cell_ii.sum() / fillfac
+        #print('~~~~ cell = %s, n=%i ~~~~' % (cell, ncell_ii))
+        with torch.no_grad():
+            tmp_logits = t2n(di_mdl[cell](timg_ii))
+        # Save for later
+        holder_logits[ii,jj,:,:] = tmp_logits
+        holder_lbls[ii,jj,:,:] = cell_ii_bin
+    torch.cuda.empty_cache()
+    dtime = time() - stime
+    nleft, rate = len(df_tt) - (ii+1), (ii+1) / dtime
+    meta = (nleft / rate) / 60
+    print('ETA: %.1f minutes (%i of %i)' % (meta, ii+1, len(df_tt)))
+
+# Calculate precision/recall for each cell type
+holder = []
+for jj, cell in enumerate(cells):
+    for tt in di_tt:
+        print('~~~~ cell = %s, tt=%s ~~~~' % (cell, tt))
+        idx_tt = df_tt.query('tt==@tt').idt_tissue.index.values
+        phat_tt = sigmoid(holder_logits[idx_tt, jj, :, :])
+        ybin_tt = holder_lbls[idx_tt, jj, :, :]
+        tmp_df = global_auprc(ybin_tt, phat_tt, n_points=50)
+        tmp_df = tmp_df.assign(cell=cell, tt=tt)
+        holder.append(tmp_df)
+res_pr = pd.concat(holder).melt(['cell','tt','thresh'],None,'msr')
+res_pr.tt = pd.Categorical(res_pr.tt, list(di_tt)).map(di_tt)
+res_pr.cell = res_pr.cell.map(di_cell)
+
+# Make a plot
+gg_auprc = (pn.ggplot(res_pr, pn.aes(x='thresh',y='value',color='tt',linetype='msr')) + 
+    pn.theme_bw() + pn.geom_line() + 
+    pn.facet_wrap('~cell',nrow=1,scales='free_x') + 
+    pn.scale_color_discrete(name='Dataset') + 
+    pn.scale_linetype_manual(name='Measure',labels=['Precision','Recall'],values=['solid','dashed']) + 
+    pn.labs(y='Percent',x='Threshold'))
+gg_save('gg_auprc.png', dir_figures, gg_auprc, 10, 4)
+
 
 ########################################
 ## --- (5) PROBABILITY CLUSTERING --- ##
-
-from skimage.measure import label
-from sklearn.metrics import r2_score
-
-def rho(x, y):
-    return np.corrcoef(x, y)[0,1]
-
-def get_num_label(arr, connectivity):
-    res = label(input=arr, connectivity=connectivity, return_num=True)[1]
-    return res
-
-# arr = yhat_rest[i].copy(); connectivity=1; idx=idt_rest.values[i]
-def lbl_freq(arr, connectivity, idx=None):
-    clust_grps = label(arr, connectivity=connectivity)
-    freq = pd.value_counts(clust_grps[np.nonzero(clust_grps)])
-    if len(freq) == 0:
-        freq = pd.DataFrame({'clust':None, 'n':0},index=[0])
-    else:
-        freq = freq.reset_index().rename(columns={'index':'clust',0:'n'})
-    if idx is not None:
-        freq.insert(0,'idx',idx)
-    return freq
-
 
 conn_seq = [1, 2]
 
@@ -476,9 +460,9 @@ gg_perf_star = (pn.ggplot(res_cell_perf,pn.aes(x='msr',y='value',color='cell')) 
     pn.geom_hline(yintercept=0,linetype='--') + 
     pn.ggtitle('Linerange shows 95% CI') + 
     pn.theme(subplots_adjust={'wspace': 0.25}) + 
-    pn.facet_wrap('~tt',scales='free_y',nrow=1))
-gg_save('gg_perf_star.png', dir_figures, gg_perf_star, 12, 2.5)
-
+    pn.facet_wrap('~tt',nrow=2))
+gg_save('gg_perf_star.png', dir_figures, gg_perf_star, 6, 5)
+# ,scales='free_y'
 
 
 

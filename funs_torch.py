@@ -108,7 +108,7 @@ class randomFlip(object):
 #       before reverse_flips can be called
 
 class all_img_flips():
-    def __init__(self, img_lbl, enc_tens=None, tol=1e-10, is_double=False):
+    def __init__(self, img_lbl, enc_tens=None, tol=1e-4, is_double=False):
         assert len(img_lbl) == 2 and isinstance(img_lbl, list)
         self.img_lbl = img_lbl.copy()
         self.img = img_lbl[0].copy()
@@ -161,8 +161,8 @@ class all_img_flips():
             timg, tlbl = self.enc_tens(tmp_lst)
             self.img_tens[jj,:,:,:] = timg
             self.lbl_tens[jj,:,:,:] = tlbl        
-        assert np.all(np.abs(t2n(torch.sum(self.img_tens,[1,2,3])) - self.img.sum()) < self.tol)
-        assert np.all(np.abs(t2n(torch.sum(self.lbl_tens,[1,2,3])) - self.lbl.sum()) < self.tol)
+        assert np.all(np.abs(t2n(torch.mean(self.img_tens,[1,2,3])) - self.img.mean()) < self.tol)
+        assert np.all(np.abs(t2n(torch.mean(self.lbl_tens,[1,2,3])) - self.lbl.mean()) < self.tol)
         
     def reverse_flips(self, img_lbl):
         assert len(img_lbl) == 2 and isinstance(img_lbl, list)
