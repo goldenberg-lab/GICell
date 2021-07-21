@@ -3,7 +3,39 @@ import torch
 from funs_support import t2n
 import pandas as pd
 from scipy import stats
-# from sklearn.metrics import average_precision_score as auprc
+from skimage.measure import label
+
+def rho(x, y):
+    return np.corrcoef(x, y)[0,1]
+
+def get_num_label(arr, connectivity):
+    res = label(input=arr, connectivity=connectivity, return_num=True)[1]
+    return res
+
+# arr = yhat_rest[i].copy(); connectivity=1; idx=idt_rest.values[i]
+def lbl_freq(arr, connectivity, idx=None):
+    clust_grps = label(arr, connectivity=connectivity)
+    freq = pd.value_counts(clust_grps[np.nonzero(clust_grps)])
+    if len(freq) == 0:
+        freq = pd.DataFrame({'clust':None, 'n':0},index=[0])
+    else:
+        freq = freq.reset_index().rename(columns={'index':'clust',0:'n'})
+    if idx is not None:
+        freq.insert(0,'idx',idx)
+    return freq
+
+# # phat=phat_train[0].copy(); thresh=thresh_star; n=n_star; connectivity=conn_star
+# # del phat, thresh, n, connectivity, yhat, lbls, freq, vkeep
+def phat2lbl(phat, thresh, n, connectivity):
+    yhat = np.where(phat >= thresh, 1, 0)
+    lbls = label(input=yhat, connectivity=connectivity)
+    freq = pd.value_counts(lbls[np.nonzero(lbls)])
+    if len(freq) == 0:
+        yhat = np.zeros(yhat.shape)
+    else:
+        vkeep = freq[freq >= n].index.values
+        yhat = np.where(np.isin(lbls, vkeep),1,0)
+    return yhat
 
 # Function to calculate global AUROC
 def global_auroc(Ytrue, Ypred):  # Ytrue, Ypred = Ybin_val.copy(), P_val.copy()
