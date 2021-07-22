@@ -64,7 +64,15 @@ python -u explore_hp.py
 echo "--- (8) Test set ---"
 # Find test-set performance
 python -u explore_test.py
-# output: 
+# output:   ~/output/inf_stab.csv
+#           ~/output/figures/{gg_inf_stab,gg_auroc_tt,gg_auprc,gg_scatter_unet,gg_thresh_n_{msr},gg_scatter_star,gg_perf_star}
+
+
+echo "--- (9) Find peak eosin region ---"
+# Find regions of highest eosinophil density on full image
+python -u find_peak_eosin.py --nfill $nfill --s2 $s2
+
+
 
 return
 

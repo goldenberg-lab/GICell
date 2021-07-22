@@ -1,8 +1,68 @@
-from funs_support import intax3, stopifnot, t2n
+from funs_support import intax3, stopifnot, sigmoid, t2n
+from PIL import Image
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils import data
+import gc
+import PIL
+
+PIL.Image.MAX_IMAGE_PIXELS = 1933120000
+
+"""
+img_path: path to .png
+mdl: UNet or dictionary of UNet models
+stride, hw: stride, height+width
+returns img and dataframe
+"""
+# img_path = path_idt; mdl=di_mdl; stride=250; hw=500
+def full_img_inf(img_path, mdl, device, stride=500, hw=500):
+    assert isinstance(mdl, dict)
+    assert 'eosin' in mdl
+    # Load the image
+    img = Image.open(img_path)
+    img = np.array(img.convert('RGB'))
+    height, width, channels = img.shape
+    print('Image dimensions = %s' % (img.shape,))
+    # Loop over the image in convolutional chunks
+    right_stride, right_rem = divmod(width - hw, stride)
+    down_stride, down_rem = divmod(height - hw, stride)
+    right_stride += 1
+    down_stride += 1
+    right_stride += int(right_rem>0)
+    down_stride += int(down_rem>0)
+    holder = []
+    for r in range(right_stride):
+        for d in range(down_stride):
+            # Get image location
+            ylo = stride*d
+            yup = min(hw + stride*d, height)
+            xlo = stride*r
+            xup = min(hw + stride*r, width)
+            if yup == height:
+                ylo = yup - hw
+            if xup == width:
+                xlo = xup - hw
+            print('Convolution: r=%i, d=%i (y=%i:%i, x=%i:%i)' % (r,d,ylo,yup,xlo,xup))
+            # Convert image to tensor
+            tmp_img = img[ylo:yup, xlo:xup]
+            tmp_img = np.expand_dims(tmp_img.transpose([2,0,1]),0)
+            tmp_img = torch.tensor(tmp_img / 255, dtype=torch.float32).to(device)
+            with torch.no_grad():
+                tmp_di = {k:np.sum(sigmoid(t2n(v(tmp_img)))) for k,v in mdl.items()}
+            torch.cuda.empty_cache()
+            tmp_di = {k:[v] for k,v in tmp_di.items()}
+            tmp_df = pd.DataFrame.from_dict(tmp_di)
+            tmp_df = tmp_df.assign(xlo=xlo,xup=xup,ylo=ylo,yup=yup)
+            holder.append(tmp_df)
+    # Merge
+    res_inf = pd.concat(holder).reset_index(None, True)
+    # Get the "best"
+    xlo, xup, ylo, yup = res_inf.loc[res_inf.eosin.idxmax(),['xlo','xup','ylo','yup']].astype(int)
+    img_star = img[ylo:yup,xlo:xup]
+    del img
+    gc.collect()
+    return img_star, res_inf
 
 
 class CellCounterDataset(data.Dataset):
@@ -109,7 +169,8 @@ class randomFlip(object):
 
 class all_img_flips():
     def __init__(self, img_lbl, enc_tens=None, tol=1e-4, is_double=False):
-        assert len(img_lbl) == 2 and isinstance(img_lbl, list)
+        assert len(img_lbl) == 2 and i
+        nstance(img_lbl, list)
         self.img_lbl = img_lbl.copy()
         self.img = img_lbl[0].copy()
         self.lbl = img_lbl[1].copy()

@@ -15,16 +15,11 @@ import socket
 
 def find_dir_cell():
     cpu = socket.gethostname()
-    # Set directory based on CPU name
     if cpu == 'RT5362WL-GGB':
         print('On predator machine')
-        if os.name == 'nt':
-            print('We are on Windows')
-            dir_cell = 'D:\\projects\\GICell'
-        elif os.name == 'posix':
-            dir_cell = '/mnt/d/projects/GICell'
-        else:
-            assert False
+        di_dir = {'windows':'D:\\projects\\GICell', 'wsl':'/mnt/d/projects/GICell'}
+        di_os = {'nt':'windows', 'posix':'wsl'}
+        dir_cell = di_dir[di_os[os.name]]
     elif cpu == 'snowqueen':
         print('On snowqueen machine')
         dir_cell = '/data/GICell'
@@ -37,6 +32,27 @@ def find_dir_cell():
     else:
         sys.exit('Where are we?!')
     return dir_cell
+
+def find_dir_GI():
+    cpu = socket.gethostname()
+    if cpu == 'RT5362WL-GGB':
+        print('On predator machine')
+        di_dir = {'windows':'D:\\projects\\GIOrdinal', 'wsl':'/mnt/d/projects/Ordinal'}
+        di_os = {'nt':'windows', 'posix':'wsl'}
+        dir_GI = di_dir[di_os[os.name]]
+    elif cpu == 'snowqueen':
+        print('On snowqueen machine')
+        dir_GI = '/data/GIOrdinal'
+    elif cpu == 'cavansite':
+        print('On cavansite')
+        dir_GI = '/data/erik/GIOrdinal'
+    elif cpu == 'malachite':
+        print('On malachite')
+        dir_GI = '/home/erik/projects/GIOrdinal'
+    else:
+        sys.exit('Where are we?!')
+    return dir_GI
+
 
 # ---- CONVERT THE 3 HYPERPARAMETERS INTO HASH ---- #
 # NOTE: returns an int
