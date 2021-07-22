@@ -21,7 +21,8 @@ def full_img_inf(img_path, mdl, device, stride=500, hw=500):
     assert 'eosin' in mdl
     # Load the image
     img = Image.open(img_path)
-    img = np.array(img.convert('RGB'))
+    img = img.convert('RGB')
+    img = np.array(img)
     height, width, channels = img.shape
     print('Image dimensions = %s' % (img.shape,))
     # Loop over the image in convolutional chunks

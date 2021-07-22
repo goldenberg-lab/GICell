@@ -136,7 +136,7 @@ for ii, idt in enumerate(idt_val):
     im = Image.fromarray(tmp_img)
     im.save(os.path.join(dir_peak, fn_img))
     # ETA
-    dtime, nleft = time() - stime, n_idt_hsk - (ii+1)
+    dtime, nleft = time() - stime, n_idt_val - (ii+1)
     rate = (ii+1) / dtime
     seta = nleft / rate
     print('~~~~~~~ ETA = %.1f minutes ~~~~~~~' % (seta/60))

@@ -70,7 +70,7 @@ python -u explore_test.py
 
 echo "--- (9) Find peak eosin region ---"
 # Find regions of highest eosinophil density on full image
-python -u find_peak_eosin.py --nfill $nfill --s2 $s2
+python -u find_peak_eosin.py --nfill 1 --hw 500 --stride 500
 
 
 
