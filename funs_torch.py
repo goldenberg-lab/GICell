@@ -22,6 +22,7 @@ def full_img_inf(img_path, mdl, device, stride=500, hw=500):
     # Load the image
     img = Image.open(img_path)
     img = img.convert('RGB')
+    # THIS PART HERE CAN BE MODIFIED # 
     img = np.array(img)
     height, width, channels = img.shape
     print('Image dimensions = %s' % (img.shape,))
@@ -170,8 +171,7 @@ class randomFlip(object):
 
 class all_img_flips():
     def __init__(self, img_lbl, enc_tens=None, tol=1e-4, is_double=False):
-        assert len(img_lbl) == 2 and i
-        nstance(img_lbl, list)
+        assert len(img_lbl) == 2 and isinstance(img_lbl, list)
         self.img_lbl = img_lbl.copy()
         self.img = img_lbl[0].copy()
         self.lbl = img_lbl[1].copy()

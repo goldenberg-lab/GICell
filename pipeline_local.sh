@@ -55,7 +55,7 @@ python -u run_mdl.py --is_eosin  --check_model
 
 
 echo "--- (7) HP SEARCH ---"
-# Call pipeline nohup on appropriate machine to get results
+# Call pipeline_best.sh on appropriate machine to get results
 python -u explore_hp.py
 # output:   ~/output/figures/gg_{metric}_val.png
 #           ~/output/figures/dat_{pr/ce}_ce.csv
@@ -70,7 +70,7 @@ python -u explore_test.py
 
 echo "--- (9) Find peak eosin region ---"
 # Find regions of highest eosinophil density on full image
-python -u find_peak_eosin.py --nfill 1 --hw 500 --stride 500
+python -u find_peak_eosin.py --nfill 1 --hw 500 --stride 500 --hsk --cinci
 
 
 

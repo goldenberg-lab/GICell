@@ -5,6 +5,7 @@ import itertools
 import pickle
 import pandas as pd
 import numpy as np
+import zipfile
 from zipfile import ZipFile
 from scipy.ndimage import gaussian_filter
 from sklearn.metrics import mean_squared_error as mse
@@ -53,6 +54,15 @@ def find_dir_GI():
         sys.exit('Where are we?!')
     return dir_GI
 
+
+# Zip a list of files
+def zip_files(lst, fold, zip_fn):
+    tmp_base = os.getcwd()
+    os.chdir(fold)
+    with ZipFile(zip_fn, 'w') as zipMe:        
+        for file in lst:
+            zipMe.write(file, compress_type=zipfile.ZIP_DEFLATED)
+    os.chdir(tmp_base)
 
 # ---- CONVERT THE 3 HYPERPARAMETERS INTO HASH ---- #
 # NOTE: returns an int
