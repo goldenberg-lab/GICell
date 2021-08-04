@@ -5,7 +5,7 @@ parser.add_argument('-nc','--n_columns', help="Number of columns for figure",def
 args = parser.parse_args()
 n_hours = args.n_hours
 nc = args.n_columns
-# n_hours, nc = 96, 6
+# n_hours, nc = 24, 2
 
 ###############################
 ## --- (0) PRELIMINARIES --- ##

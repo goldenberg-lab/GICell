@@ -243,6 +243,15 @@ def label_blur(idx, cells, vcells, shape, fill=1, s2=2):
             nc_act[kk] = 0
     return img
 
+# Remove columns with "Unnamed" from pandas df
+def drop_unnamed(x):
+    assert isinstance(x, pd.DataFrame)
+    cn = x.columns
+    cn_drop = list(cn[cn.str.contains('Unnamed')])
+    if len(cn_drop) > 0:
+        x = x.drop(columns=cn_drop)
+    return x
+
 
 # Function to parse the zipped file
 # fn=path; dir=dir_base
@@ -250,14 +259,20 @@ def zip_points_parse(fn, dir, valid_cells):
     tt = fn.split('.')[-1]
     if tt == 'tsv':
         print('tsv file')
-        df = pd.read_csv(fn, sep='\t', usecols=['x','y','name'])
+        df = drop_unnamed(pd.read_csv(fn, sep='\t'))
+        df.rename(columns={'class':'name'},inplace=True,errors='ignore')
+        df = df[['x','y','name']]
         df.rename(columns={'name':'cell'}, inplace=True)
         df.cell = df.cell.str.lower()
         # Remove any rows with missing cell names
         df = df[df.cell.notnull()].reset_index(None,True)
-        d_cells = np.setdiff1d(df.cell.unique(),valid_cells)
+        # Remove trailing "s" 
+        df.cell = df.cell.str.replace('s$','',regex=True)
+        # Remove " cell"
+        df.cell = df.cell.str.replace('\\scell$','',regex=True)
+        d_cells = pd.Series(np.setdiff1d(df.cell.unique(),valid_cells))
         if len(d_cells) > 0:
-            print('New cells: %s' % (d_cells.join(', ')))
+            print('New cells: %s' % d_cells.str.cat(sep=', '))
             sys.exit('Unidentified cell')
     else:
         print('zip file')
