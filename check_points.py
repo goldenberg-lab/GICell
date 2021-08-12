@@ -2,10 +2,13 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('-n','--n_hours', help="Number of hours to consider",default=24,type=int)
 parser.add_argument('-nc','--n_columns', help="Number of columns for figure",default=2,type=int)
+parser.add_argument('-u','--user', help="Apply to sub folder",default=None,type=str)
 args = parser.parse_args()
 n_hours = args.n_hours
 nc = args.n_columns
-# n_hours, nc = 24, 2
+user = args.user
+# n_hours, nc, user = 300, 4, 'dua'
+
 
 ###############################
 ## --- (0) PRELIMINARIES --- ##
@@ -34,6 +37,10 @@ if not os.path.exists(dir_output):
     print('output directory does not exist, creating')
     os.mkdir(dir_output)
 
+if user is not None:
+    dir_points = os.path.join(dir_points, user)
+    assert os.path.exists(dir_points)
+
 ##################################
 ## --- (1) LOAD IN THE DATA --- ##
 
@@ -48,6 +55,7 @@ raw_images = pd.Series(fn_images).str.split('\\.', expand=True).iloc[:, 0]
 stopifnot(raw_points.isin(raw_images).all())
 print('The following images were annotated within %i hours: %s' %
       (n_hours,', '.join(fn_points)))
+print(len(fn_points))
 
 plt.close()
 npoint = len(fn_points)
@@ -66,4 +74,6 @@ for ii_fn, ax in zip(enumerate(fn_points),axes.flatten()):
 # Save output
 
 fn_date = 'annotated_cells_' + datetime.now().strftime('%Y_%m_%d') + '.png'
+if user is not None:
+    fn_date = user + '_'+ fn_date
 fig.savefig(os.path.join(dir_output,fn_date))
