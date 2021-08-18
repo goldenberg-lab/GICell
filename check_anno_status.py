@@ -9,6 +9,7 @@ dir_base = find_dir_cell()
 dir_images = os.path.join(dir_base, 'images')
 dir_points = os.path.join(dir_base, 'points')
 dir_output = os.path.join(dir_base, 'output')
+dir_peak = os.path.join(dir_output, 'peak')
 dir_ordinal = os.path.join(dir_base,'..','GIOrdinal','data')
 dir_20x = os.path.join(dir_ordinal,'20X')
 # Load in the code breaker
@@ -58,9 +59,41 @@ print(idt_merge.groupby(['is_new','is_anno']).n_anno.sum().reset_index().query('
 # Find the missing patients from the new batches
 idt_merge.query('is_new==True & is_anno==False').drop(columns=['n_anno','is_anno','is_new']).idt.to_list()
 
-# Remaining rectal patients
-old_rectal = idt_merge.query('is_new==False & is_anno==False & tissue=="Rectum"')
-old_rectal = old_rectal[['idt','oid','tissue']].merge(df_nancy.drop(columns=['file','lab_dt']).rename(columns={'ID':'oid'}),'left',['oid','tissue'])
-old_rectal = old_rectal.drop(columns=['oid','score'])
-old_rectal[['CII','AIC','ULC']] = old_rectal[['CII','AIC','ULC']].astype(int)
-old_rectal
+# # Remaining rectal patients
+# old_rectal = idt_merge.query('is_new==False & is_anno==False & tissue=="Rectum"')
+# old_rectal = old_rectal[['idt','oid','tissue']].merge(df_nancy.drop(columns=['file','lab_dt']).rename(columns={'ID':'oid'}),'left',['oid','tissue'])
+# old_rectal = old_rectal.drop(columns=['oid','score'])
+# old_rectal[['CII','AIC','ULC']] = old_rectal[['CII','AIC','ULC']].astype(int)
+# old_rectal
+
+
+#############################
+# ---- CIDSCAN BATCHES ---- #
+
+from funs_support import zip_files
+
+eosin_thresh = 10
+
+df_cidscann = pd.read_excel(os.path.join(dir_ordinal,'cidscann_batches.xlsx'))
+df_cidscann.insert(0,'idt',df_cidscann.file.str.split('\\s',1,True)[0])
+fn_peak = pd.Series(os.listdir(dir_peak))
+fn_peak = fn_peak[fn_peak.str.contains('^cleaned.*\\.png')].reset_index(None,True)
+fn_peak = fn_peak.str.replace('.png','')
+assert not fn_peak.duplicated().any()
+idt_peak = pd.DataFrame({'fn':fn_peak,'idt':fn_peak.str.split('\\_',2,True)[1]})
+
+# Loop through each and find
+files_png = []
+for i, idt in enumerate(df_cidscann.idt):
+    # print('Iteration %i of %i' % (i+1, len(df_cidscann)))
+    tmp_idt = idt_peak.query('idt == @idt').reset_index(None,True)
+    assert len(tmp_idt) == 1
+    path_csv = os.path.join(dir_peak, tmp_idt.loc[0,'fn'] + '.csv')
+    path_png = tmp_idt.loc[0,'fn'] + '.png'
+    tmp_inf = pd.read_csv(path_csv)
+    eosin_max = tmp_inf.eosin.max()
+    if eosin_max > 10:
+        files_png.append(path_png)
+
+zip_files(lst=files_png, fold=dir_peak, zip_fn='cidscann_v2.zip')
+
