@@ -72,28 +72,4 @@ echo "--- (9) Find peak eosin region ---"
 # Find regions of highest eosinophil density on full image
 python -u find_peak_eosin.py --nfill 1 --hw 500 --stride 500 --hsk --cinci
 
-
-
-return
-
-# # Set folders
-# dir_output="/mnt/d/projects/GIcell/output"
-# dir_snapshot=$dir_output/checkpoint/snapshot
-# sq_output="~/Documents/projects/GI/GICell/output"
-# sq_checkpoint=$sq_output/checkpoint
-# sq_snapshot=$sq_checkpoint/snapshot
-
-
-# echo "--- (4) HYPERPARAMETER SELECT ---"
-# scp erik@172.16.18.177:$sq_output $dir_output
-# scp erik@172.16.18.177:$sq_snapshot/* $dir_snapshot
-
-# echo "--- (5) FULL IMAGE INFERENCE ---"
-# scp erik@172.16.18.177:$sq_output/df_fullimg.csv $dir_output
-
-# echo "--- (6) EVALUATION ---"
-# # (i) Calculate statistical associations with full-image
-# # (ii) Compares current to previous model (visual + scatter)
-# #python script_inference.py
-
 echo "--------  END OF pipeline_GI.sh ----------"

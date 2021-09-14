@@ -3,6 +3,7 @@ import os
 import shutil
 import itertools
 import pickle
+import PIL
 import pandas as pd
 import numpy as np
 import zipfile
@@ -254,22 +255,29 @@ def drop_unnamed(x):
 
 
 # Function to parse the zipped file
-# fn=path; dir=dir_base
+# fn=path_points; dir=dir_points
+"""
+fn:             name of the file
+dir:            folder where file lives
+valid_cells:    list of cells
+"""
 def zip_points_parse(fn, dir, valid_cells):
     tt = fn.split('.')[-1]
+    path = os.path.join(dir, fn)
+    assert os.path.exists(path)
     if tt == 'tsv':
         print('tsv file')
-        df = drop_unnamed(pd.read_csv(fn, sep='\t'))
+        df = drop_unnamed(pd.read_csv(path, sep='\t'))
         df.rename(columns={'class':'name'},inplace=True,errors='ignore')
         df = df[['x','y','name']]
         df.rename(columns={'name':'cell'}, inplace=True)
-        df.cell = df.cell.str.lower()
+        df['cell'] = df.cell.str.lower()
         # Remove any rows with missing cell names
         df = df[df.cell.notnull()].reset_index(None,True)
         # Remove trailing "s" 
-        df.cell = df.cell.str.replace('s$','',regex=True)
+        df['cell'] = df.cell.str.replace('s$','',regex=True)
         # Remove " cell"
-        df.cell = df.cell.str.replace('\\scell$','',regex=True)
+        df['cell'] = df.cell.str.replace('\\scell$','',regex=True)
         d_cells = pd.Series(np.setdiff1d(df.cell.unique(),valid_cells))
         if len(d_cells) > 0:
             print('New cells: %s' % d_cells.str.cat(sep=', '))
@@ -277,13 +285,10 @@ def zip_points_parse(fn, dir, valid_cells):
     else:
         print('zip file')
         path_tmp = os.path.join(dir, 'tmp')
-        with ZipFile(file=fn, mode='r') as zf:
+        with ZipFile(file=path, mode='r') as zf:
             zf.extractall(path_tmp)
         # Loop through and parse files
         names = pd.Series(zf.namelist())
-        # valid_files = ['Points ' + str(k + 1) + '.txt' for k in range(7)]
-        # if not names.isin(valid_files).all():
-        #     stopifnot(False)
         holder = []
         for pp in names:
             s_pp = pd.read_csv(os.path.join(path_tmp, pp), sep='\t', header=None)
@@ -296,5 +301,30 @@ def zip_points_parse(fn, dir, valid_cells):
             holder.append(df_pp)
         df = pd.concat(holder).reset_index(drop=True)
         assert pd.Series(df.cell.unique()).isin(valid_cells).all()
-        shutil.rmtree('tmp', ignore_errors=True)  # Get rid of temporary folder
+        shutil.rmtree(path_tmp, ignore_errors=True)  # Get rid of temporary folder
     return df
+
+
+
+"""
+LOAD SPECIFIC PORTION OF PIL IMAGE IN NP.ARRAY
+img:  a PIL image loaded by img=PIL.Image.open(path)
+"""
+# xstart, xend, ystart, yend = 10, 20, 30, 50
+def get_img_range(img, xstart, xend, ystart, yend):
+    assert isinstance(img,PIL.PngImagePlugin.PngImageFile)
+    assert hasattr(img, 'getpixel')
+    assert img.mode == 'RGB'
+    h, w = img.height, img.width
+    if xend+1 > w:
+        print('Warning, xend is greater than width')
+        xend = w-1
+    if yend+1 > h:
+        print('Warning, yend is greater than height')
+        yend = h-1
+    vals = np.zeros([yend-ystart+1,xend-xstart+1,3],dtype=int)
+    for ix, x in enumerate(range(xstart, xend+1)):
+        for iy, y in enumerate(range(ystart, yend+1)):
+            rgb = img.getpixel(xy=(x, y))
+            vals[iy,ix] = np.array(rgb)
+    return vals
