@@ -1,8 +1,4 @@
 import argparse
-from plotnine.facets.facet_wrap import facet_wrap
-
-from plotnine.labels import ggtitle
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--hw', type=int, help='Height/width of crop size', default=500)
 parser.add_argument('--stride', type=int, help='Stride size', default=500)

@@ -1,21 +1,79 @@
 # Script for helpful plotting functions
 import os
-import numpy as np
 import matplotlib
 matplotlib.use('Agg')
-from matplotlib import pyplot as plt
+import numpy as np
 import seaborn as sns
-from colorspace.colorlib import HCL
-from funs_support import sumax3
-colorz3 = np.array([sns.color_palette(None)[k] for k in [0,1,2,3]])
+from colormath.color_objects import BaseRGBColor
 from skimage.measure import label
+from matplotlib import pyplot as plt
+
+colorz3 = np.array([sns.color_palette(None)[k] for k in [0,1,2,3]])
+
 
 # --- FUNCTION TO REPRODUCE DEFAULT GGPLOT COLORS --- #
+
+def rgb255(v):
+    return np.where(v > 255, 255, np.where(v < 0, 0, v))
+
+def cosd(d):
+    r = d * np.pi / 180
+    return np.cos(r)
+
+def sind(d):
+    r = d * np.pi / 180
+    return np.sin(r)
+
+def gamma_correct(u):
+    GAMMA = 2.4
+    if u > 0.00304:
+        u = 1.055*u**(1/GAMMA) - 0.055
+    else:
+        u = 12.92*u
+    return u
+    
+# Taken from: https://github.com/nickjhughes/hclmat/blob/master/hcl2rgb.m
+def hcl2rgb(h, c, l):
+    WHITE_Y = 100.000
+    WHITE_u = 0.1978398
+    WHITE_v = 0.4683363
+    assert not (l < 0 or l > WHITE_Y or c < 0)
+    L = l
+    U = c * cosd(h)
+    V = c * sind(h)
+    if L <= 0 and U == 0 and V == 0:
+        X = 0
+        Y = 0
+        Z = 0
+    else:
+        Y = WHITE_Y
+        if L > 7.999592:
+            Y = Y*((L + 16)/116)**3
+        else:
+            Y = Y*L/903.3
+        u = U/(13*L) + WHITE_u
+        v = V/(13*L) + WHITE_v
+        X = (9.0*Y*u)/(4*v)
+        Z = -X/3 - 5*Y + 3*Y/v
+    r = gamma_correct((3.240479*X - 1.537150*Y - 0.498535*Z)/WHITE_Y)
+    g = gamma_correct((-0.969256*X + 1.875992*Y + 0.041556*Z)/WHITE_Y)
+    b = gamma_correct((0.055648*X - 0.204043*Y + 1.057311*Z)/WHITE_Y)
+    r = rgb255(int(np.round(255 * r)))
+    g = rgb255(int(np.round(255 * g)))
+    b = rgb255(int(np.round(255 * b)))
+    return r, g, b
+
+def hcl2hex(h, c, l):
+    r, g, b = hcl2rgb(h, c, l)
+    res = BaseRGBColor(rgb_r=r, rgb_g=g, rgb_b=b, is_upscaled=True)
+    hex = res.get_rgb_hex().upper()
+    return hex
+
 def gg_color_hue(n):
     hues = np.linspace(15, 375, num=n + 1)[:n]
     hcl = []
     for h in hues:
-        hcl.append(HCL(H=h, L=65, C=100).colors()[0])
+        hcl.append(hcl2hex(h=h, c=100, l=65))
     return hcl
 
 # --- FUNCTION TO OVERWRITE EXISTING GGPLOTS --- #
