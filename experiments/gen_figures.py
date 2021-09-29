@@ -11,7 +11,7 @@ matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from PIL import Image
 from cells import valid_cells, inflam_cells
-from funs_support import read_pickle, zip_points_parse, find_dir_cell, get_img_range
+from funs_support import read_pickle, zip_points_parse, find_dir_cell
 
 use_cuda = torch.cuda.is_available()
 if use_cuda:
@@ -119,16 +119,24 @@ plt.close()
 nc = 3  # data, annotations, prediction
 nr = k
 fig, axes = plt.subplots(nrows=nr, ncols=nc, figsize=(nc*5, nr*5))
-for i, ax in enumerate(axes.flatten()):
-    row = i // nc
-    fn = fn_idt_k[row]
-    col = i % nc
-    if col == 0:  # image
-        ax.imshow(di[fn]['img'])
-    elif col == 1:  # annotations
-        sns.scatterplot(x='x', y='y', hue='cell', hue_order=list(palette), palette=palette, data=di[fn]['points'], ax=ax)
-    else:
-        print('Inference')
+for i in range(1):
+    for j in range(nc):
+        print('row = %i, col = %i' % (i, j))
+        row, col = i, j
+        ax = axes[i,j]
+        fn = fn_idt_k[row]
+        scatter = di[fn]['points'].copy()
+        img_val = di[fn]['img'].copy()
+        if col == 0:  # image
+            print('image')
+            ax.imshow(img_val)
+        elif col == 1:  # annotations
+            print('scatter')
+            sns.scatterplot(x='x', y='y', hue='cell', hue_order=list(palette), palette=palette, data=scatter, ax=ax)
+        else:
+            print('both')
+            ax.imshow(img_val)
+            sns.scatterplot(x='x', y='y', hue='cell', hue_order=list(palette), palette=palette, data=scatter, ax=ax)
 # Save output
 fig.savefig(os.path.join(dir_figures,'ml_pipeline.png'))
 plt.close()

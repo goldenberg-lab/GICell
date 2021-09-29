@@ -7,7 +7,7 @@ args = parser.parse_args()
 n_hours = args.n_hours
 nc = args.n_columns
 user = args.user
-# n_hours, nc, user = 300, 4, 'dua'
+# n_hours, nc, user = 12, 1, 'oscar'
 
 
 ###############################
@@ -60,6 +60,9 @@ print(len(fn_points))
 plt.close()
 npoint = len(fn_points)
 nr = (npoint // nc) + int((npoint % nc)>0)
+if nr == nc == 1:
+    print('Adding an extra column for flatten')
+    nc = 2
 fig, axes = plt.subplots(nrows=nr, ncols=nc, figsize=(nc*5, nr*5))
 for ii_fn, ax in zip(enumerate(fn_points),axes.flatten()):
     ii, fn = ii_fn[0], ii_fn[1]
@@ -72,7 +75,6 @@ for ii_fn, ax in zip(enumerate(fn_points),axes.flatten()):
     ax.imshow(img_vals)
     sns.scatterplot(x='x', y='y', hue='cell', data=df_ii, ax=ax)
 # Save output
-
 fn_date = 'annotated_cells_' + datetime.now().strftime('%Y_%m_%d') + '.png'
 if user is not None:
     fn_date = user + '_'+ fn_date
