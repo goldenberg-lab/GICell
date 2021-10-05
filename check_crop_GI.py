@@ -14,7 +14,7 @@ df_breaker['tissue2'] = df_breaker.file2.str.replace('.png','').str.split('_').a
 
 # Image data on the GICell side
 fn_images = pd.Series(os.listdir(dir_images))
-fn_images = fn_images[fn_images.str.contains('png$')].reset_index(None,True)
+fn_images = fn_images[fn_images.str.contains('png$')].reset_index(None,drop=True)
 df_images = fn_images.str.split('\\_',2,True).drop(columns=[0])
 df_images.rename(columns={1:'idt',2:'tissue'}, inplace=True)
 df_images['tissue'] = df_images.tissue.str.replace('.png','')
@@ -23,7 +23,7 @@ tmp.rename(columns={0:'tissue',1:'num',2:'alt'}, inplace=True)
 df_images = pd.concat([df_images.drop(columns='tissue'),tmp],1)
 df_images['fn'] = fn_images.copy()
 cn_sort = ['idt','tissue','num']
-df_images = df_images.sort_values(cn_sort).reset_index(None, True)
+df_images = df_images.sort_values(cn_sort).reset_index(None,drop=True)
 
 holder_check = []
 for ii, rr in df_images.iterrows():

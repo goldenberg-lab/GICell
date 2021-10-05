@@ -138,3 +138,6 @@ for ds in di_data:
     print(ds)
     path_dump = os.path.join(dir_output, 'annot_' + ds + '.pickle')
     hickle.dump(di_data[ds], path_dump, 'w')
+    hickle.dump({'a':1,'b':2}, path_dump, 'w')
+    hickle.load(path_dump)
+    

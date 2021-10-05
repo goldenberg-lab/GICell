@@ -1,0 +1,322 @@
+This is METAFONT, Version 2.7182818 (TeX Live 2017/Debian) (preloaded base=mf 2018.10.12)  4 OCT 2021 17:54
+**env_qupath.txt conda_env.txt
+(env_qupath.txt
+>> #This.file.may.be.used
+! Isolated expression.
+<to be read again> 
+                   to
+l.1 # This file may be used to
+                               create an environment using:
+? q
+OK, entering batchmode...
+! Extra tokens will be flushed.
+<to be read again> 
+                   to
+l.1 # This file may be used to
+                               create an environment using:
+I've just read as much of that statement as I could fathom,
+so a semicolon should have been next. It's very puzzling...
+but I'll try to get myself back together, by ignoring
+everything up to the next `;'. Please insert a semicolon
+now in front of anything that you don't want me to delete.
+(See Chapter 27 of The METAFONTbook for an example.)
+
+! Enormous number has been reduced.
+l.7 ...linux-64/ca-certificates-2021.5.30-ha878542
+                                                  _0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.8 ...ain/linux-64/intel-openmp-2021.3.0-h06a4308
+                                                  _3350.conda
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.10 ...forge/linux-64/libgfortran5-11.2.0-h5c6108
+                                                  e_8.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.16 ...m/pkgs/main/linux-64/mkl-2021.3.0-h06a4308
+                                                  _520.conda
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.22 ...onda-forge/linux-64/alsa-lib-1.2.3-h516909
+                                                  a_0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.24 .../conda-forge/linux-64/bzip2-1.0.8-h7f98852
+                                                  _4.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.25 ...onda-forge/linux-64/c-ares-1.17.2-h7f98852
+                                                  _0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.30 ...a.org/conda-forge/linux-64/icu-68.1-h58526
+                                                  e2_0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.31 ...org/conda-forge/linux-64/jbig-2.1-h7f98852
+                                                  _2003.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.33 ...g/conda-forge/linux-64/jxrlib-1.1-h7f98852
+                                                  _2.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.36 ...ge/linux-64/libbrotlicommon-1.0.9-h7f98852
+                                                  _5.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.37 ...nda-forge/linux-64/libdeflate-1.8-h7f98852
+                                                  _0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.38 ...rg/conda-forge/linux-64/libev-4.33-h516909
+                                                  a_1.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.40 ...conda-forge/linux-64/libiconv-1.16-h516909
+                                                  a_0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.41 ...conda-forge/linux-64/libogg-1.3.4-h7f98852
+                                                  _1.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.42 ...ux-64/libopenblas-0.3.17-pthreads_h8fe5266
+                                                  _1.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.43 ...onda-forge/linux-64/libopus-1.3.1-h7f98852
+                                                  _1.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.44 ...nda-forge/linux-64/libuuid-2.32.1-h7f98852
+                                                  _1000.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.45 ...conda-forge/linux-64/libuv-1.42.0-h7f98852
+                                                  _0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.46 ...forge/linux-64/libwebp-base-1.2.1-h7f98852
+                                                  _0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.49 ...rg/conda-forge/linux-64/ncurses-6.2-h58526
+                                                  e2_4.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.52 ...nda-forge/linux-64/openssl-1.1.1l-h7f98852
+                                                  _0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.56 ...-forge/linux-64/xorg-libxau-1.0.9-h7f98852
+                                                  _0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.57 ...orge/linux-64/xorg-libxdmcp-1.1.3-h7f98852
+                                                  _0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.58 ....org/conda-forge/linux-64/xz-5.2.5-h516909
+                                                  a_1.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.59 ...rg/conda-forge/linux-64/yaml-0.2.5-h516909
+                                                  a_0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.61 ...g/conda-forge/linux-64/zlib-1.2.11-h516909
+                                                  a_1010.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.63 ...forge/linux-64/libbrotlidec-1.0.9-h7f98852
+                                                  _5.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.64 ...forge/linux-64/libbrotlienc-1.0.9-h7f98852
+                                                  _5.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.66 ...da-forge/linux-64/libevent-2.1.10-hcdb4288
+                                                  _3.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.69 .../conda-forge/linux-64/libpng-1.6.37-h21135
+                                                  ba_2.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.72 .../conda-forge/linux-64/libxcb-1.13-h7f98852
+                                                  _1003.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.73 ...conda-forge/linux-64/libxml2-2.9.12-h72842
+                                                  e0_0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.75 ....org/conda-forge/linux-64/tk-8.6.11-h27826
+                                                  a3_1.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.77 ...a-forge/linux-64/brotli-bin-1.0.9-h7f98852
+                                                  _5.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.78 ...da-forge/linux-64/freetype-2.10.4-h0708190
+                                                  _1.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.82 ...onda-forge/linux-64/libtiff-4.3.0-hf544144
+                                                  _0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.84 ...-forge/linux-64/mysql-libs-8.0.25-hfa10184
+                                                  _2.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.86 ...conda-forge/linux-64/brotli-1.0.9-h7f98852
+                                                  _5.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.94 ...onda-forge/linux-64/openjpeg-2.4.0-hb52868
+                                                  f_1.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.99 ...onda-forge/linux-64/cfitsio-3.470-hb418390
+                                                  _7.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.106 ...forge/linux-64/hdf5-1.12.1-nompi_h2750804
+                                                  _100.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.124 ...forge/linux-64/cython-0.29.24-py39he80948
+                                                  d_0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.126 ...conda-forge/linux-64/dbus-1.13.6-h48d8840
+                                                  _2.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.131 ...-forge/linux-64/pillow-8.3.2-py39ha612740
+                                                  _0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.132 ...ge/linux-64/pyqt5-sip-4.19.18-py39he80948
+                                                  d_7.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+! Enormous number has been reduced.
+l.143 ...linux-64/imagecodecs-2021.7.30-py39h44211
+                                                  f0_0.tar.bz2
+I can't handle numbers bigger than about 4095.99998;
+so I've changed your constant to that maximum amount.
+
+)
+! File ended while scanning to the end of the statement.
+<inserted text> 
+                ;
+<*> env_qupath.txt
+                   conda_env.txt
+A previous error seems to have propagated,
+causing me to read past where you wanted me to stop.
+I'll try to recover; but if the error is serious,
+you'd better type `E' or `X' now and fix your file.
+
+! Emergency stop.
+<*> env_qupath.txt conda_env.txt
+                                
+*** (job aborted, no legal end found)
+
+

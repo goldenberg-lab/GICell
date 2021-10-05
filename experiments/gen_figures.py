@@ -4,14 +4,15 @@ import os
 import torch
 import numpy as np
 import pandas as pd
+from PIL import Image
+from cells import valid_cells, inflam_cells
+from funs_support import read_pickle, zip_points_parse, find_dir_cell, t2n, sigmoid
+from funs_stats import lbl_freq
 
 import seaborn as sns
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
-from PIL import Image
-from cells import valid_cells, inflam_cells
-from funs_support import read_pickle, zip_points_parse, find_dir_cell
 
 use_cuda = torch.cuda.is_available()
 if use_cuda:
@@ -84,16 +85,25 @@ di_fn = {k:os.path.join(dir_best,k+'_'+v) for k,v in di_fn.items()}
 assert all([os.path.exists(v) for v in di_fn.values()])
 di_mdl = {k1: {k2:v2 for k2, v2 in read_pickle(v1).items() if k2 in ['mdl','hp']} for k1, v1 in di_fn.items()}
 dat_hp = pd.concat([v['hp'].assign(cell=k) for k,v in di_mdl.items()])
+# Keep only model and set to inference mode
+di_mdl = {k:v['mdl'].eval() for k,v in di_mdl.items()}
 
 # Make inference
+arr_phat = np.zeros(arr_images.shape[0:3] + (2,))
+arr_posthoc = arr_phat.copy()
 for j in range(k):
+    print('Inference of %i of %i' % (j+1, k))
     # Convert images into tensor for model (sample x channel x h x w)
     img = arr_images[[j]].transpose(0,3,1,2)
     img = torch.tensor(img / 255, dtype=torch.float, device=device)
     # Get inferences for each
-
-    # Apply post-hoc
-
+    with torch.no_grad():
+        phat_j = {k: sigmoid(np.squeeze(t2n(v(img)))) for k,v in di_mdl.items()}
+    
+    # Apply post-hoc on threshold
+    phat_j['inflam']
+    lbl_freq(arr=,connectivity=1)
+    
     # Get centre
 
 

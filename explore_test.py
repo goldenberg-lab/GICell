@@ -2,22 +2,15 @@
 
 import argparse
 parser = argparse.ArgumentParser()
-# parser.add_argument('--mdl_hash', type=str, help='How many points to pad around pixel annotation point')
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
 parser.add_argument('--check_flips', dest='check_int', action='store_true', help='Compare inference for different angles/rotations')
 args = parser.parse_args()
-mdl_hash = args.save_model
+nfill = args.nfill
 check_flips = args.check_flips
 
 # # For debugging
-# mdl_hash = None
-# mdl_hash = '4424974300780924119'
-nfill = 1
-check_flips = False
-
-# # Remove .pkl if there
-# if mdl_hash is not None:
-#     mdl_hash = mdl_hash.split('.')[0]
+# nfill = 1
+# check_flips = False
 
 import os
 import numpy as np
@@ -26,7 +19,7 @@ import hickle
 from time import time
 from funs_support import find_dir_cell, makeifnot, read_pickle, no_diff, t2n, sigmoid, makeifnot
 from cells import valid_cells, inflam_cells
-from funs_stats import global_auroc, global_auprc, rho, get_num_label, lbl_freq
+from funs_stats import global_auroc, global_auprc, rho, phat2lbl, lbl_freq
 import plotnine as pn
 from scipy import stats
 from sklearn.metrics import r2_score
