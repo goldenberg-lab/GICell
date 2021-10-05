@@ -78,7 +78,7 @@ df_cidscann = pd.read_excel(os.path.join(dir_ordinal,'cidscann_batches.xlsx'))
 df_cidscann.insert(0,'idt',df_cidscann.file.str.split('\\s',1,True)[0])
 fn_peak = pd.Series(os.listdir(dir_peak))
 fn_peak = fn_peak[fn_peak.str.contains('^cleaned.*\\.png')].reset_index(None,True)
-fn_peak = fn_peak.str.replace('.png','')
+fn_peak = fn_peak.str.replace('.png','',regex=False)
 assert not fn_peak.duplicated().any()
 idt_peak = pd.DataFrame({'fn':fn_peak,'idt':fn_peak.str.split('\\_',2,True)[1]})
 
@@ -86,7 +86,7 @@ idt_peak = pd.DataFrame({'fn':fn_peak,'idt':fn_peak.str.split('\\_',2,True)[1]})
 files_png = []
 for i, idt in enumerate(df_cidscann.idt):
     # print('Iteration %i of %i' % (i+1, len(df_cidscann)))
-    tmp_idt = idt_peak.query('idt == @idt').reset_index(None,True)
+    tmp_idt = idt_peak.query('idt == @idt').reset_index(None,drop=True)
     assert len(tmp_idt) == 1
     path_csv = os.path.join(dir_peak, tmp_idt.loc[0,'fn'] + '.csv')
     path_png = tmp_idt.loc[0,'fn'] + '.png'

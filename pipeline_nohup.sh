@@ -5,7 +5,7 @@ cpu=$(hostname)
 if [[ $cpu == "snowqueen" ]]; then
     echo "on snowqueen"
     dir_code=/home/erik/Documents/projects/GI/GICell/code
-    path_conda=/home/erik/anaconda3/etc/profile.d/conda.sh
+    path_conda=/home/erik/miniconda3/etc/profile.d/conda.sh
     dir_nohup=/data/GICell/output/nohup
 elif [[ $cpu == "cavansite" ]]; then
     echo "on cavansite"

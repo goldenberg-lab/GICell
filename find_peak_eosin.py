@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 from funs_support import find_dir_cell, find_dir_GI, makeifnot, read_pickle, makeifnot, zip_files
 from funs_plotting import gg_save
-from funs_torch import full_img_inf
+from funs_inf import full_img_inf
 import torch  # always call in torch last
 
 dir_base = find_dir_cell()

@@ -3,14 +3,15 @@
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
-parser.add_argument('--check_flips', dest='check_int', action='store_true', help='Compare inference for different angles/rotations')
+parser.add_argument('--check_flips', dest='check_flips', action='store_true', help='Compare inference for different angles/rotations')
 args = parser.parse_args()
 nfill = args.nfill
 check_flips = args.check_flips
+print('args : %s' % args)
 
 # # For debugging
 # nfill = 1
-# check_flips = False
+# check_flips = True
 
 import os
 import numpy as np
@@ -59,7 +60,6 @@ print('nfill: %i, fillfac: x%i' % (nfill, fillfac))
 ############################
 ## --- (1) LOAD MODEL --- ##
 
-cells = ['inflam', 'eosin']
 cn_hp = ['lr', 'p', 'batch']
 
 # Load in the "best" models for each typefn_best = pd.Series(os.listdir(dir_best))
@@ -76,12 +76,18 @@ print('---- BEST HYPERPARAMETERS ----')
 print(dat_hp)
 # Drop the hp and keep only model
 di_mdl = {k: v['mdl'] for k, v in di_mdl.items()}
+# If model is wrapped in DataParallel extract model
+di_mdl = {k: v.module if hasattr(v,'module') else v for k, v in di_mdl.items() }
 di_mdl = {k: v.eval() for k, v in di_mdl.items()}
 di_mdl = {k: v.float() for k, v in di_mdl.items()}
 # Models should be eval mode
 assert all([not k.training for k in di_mdl.values()])
 
 di_tt = {'train':'Train','val':'Val','test':'Test','oos':'Cinci'}
+
+# Link cell order to model
+cells = list(di_mdl.keys())
+n_cells = len(cells)
 
 ###########################
 ## --- (2) LOAD DATA --- ##
@@ -107,7 +113,7 @@ tmp1.insert(0, 'ds', 'hsk')
 tmp2 = pd.DataFrame({'ds':'cinci','tt':'oos', 'idt_tissue':list(di_data['cinci'])})
 tmp2 = df_cells.merge(tmp2,'right').assign(is_zero=lambda x: x.eosin == 0)
 tmp2.drop(columns = cells, inplace=True)
-df_tt = pd.concat([tmp1, tmp2], axis=0).reset_index(None, True)
+df_tt = pd.concat(objs=[tmp1, tmp2], axis=0).reset_index(None, drop=True)
 print(df_tt.groupby('ds').is_zero.mean())
 df_tt_idt = df_tt[['idt_tissue','tt']].copy()
 
@@ -164,10 +170,9 @@ if check_flips:
         meta = (nleft / rate) / 60
         print('ETA: %.1f minutes, %.1f hours (%i of %i)' % (meta, meta/60, ii+1, len(df_tt)))
     # Merge and save
-    inf_stab = pd.concat(holder).reset_index(None,True)
+    inf_stab = pd.concat(holder).reset_index(None,drop=True)
     inf_stab.to_csv(os.path.join(dir_checkpoint, 'inf_stab.csv'),index=False)
     inf_stab.tt = pd.Categorical(inf_stab.tt,['train','val','test','oos']).map(di_tt)
-
     inf_stab.assign(is_na=lambda x: x.auc.isnull()).groupby(['tt','cell']).is_na.mean()
 
     # Plot it
@@ -206,12 +211,12 @@ if check_flips:
 
     position = pn.position_dodge(0.5)
     gg_auroc_tt = (pn.ggplot(res_auc, pn.aes(x='tt',y='auc',color='cell')) + 
-    pn.theme_bw() + pn.labs(y='Average AUROC',title='Pixel-wise') + 
-    pn.geom_point(position=posd,size=2) + 
-    pn.theme(axis_title_x=pn.element_blank()) + 
-    pn.geom_linerange(pn.aes(ymin='lb',ymax='ub'),position=posd) + 
-    pn.scale_y_continuous(limits=[0.8,1],breaks=list(np.arange(0.8,1.01,0.05))) + 
-    pn.scale_color_discrete(name='Type',labels=['Eosinophil','Inflammatory']))
+        pn.theme_bw() + pn.labs(y='Average AUROC',title='Pixel-wise') + 
+        pn.geom_point(position=posd,size=2) + 
+        pn.theme(axis_title_x=pn.element_blank()) + 
+        pn.geom_linerange(pn.aes(ymin='lb',ymax='ub'),position=posd) + 
+        pn.scale_y_continuous(limits=[0.8,1],breaks=list(np.arange(0.8,1.01,0.05))) + 
+        pn.scale_color_discrete(name='Type',labels=['Eosinophil','Inflammatory']))
     gg_save('gg_auroc_tt.png', dir_figures, gg_auroc_tt, 6, 4)
 
 #############################################
@@ -305,12 +310,10 @@ for jj, cell in enumerate(cells):
             tmp_both = pd.concat([tmp_train, tmp_rest], axis=0).assign(cell=cell, thresh=thresh, conn=conn)
             holder.append(tmp_both)
 # Combine all results
-res_cell = pd.concat(holder).reset_index(None, True)
+res_cell = pd.concat(holder).reset_index(None, drop=True)
 # Merge with dataset type
 res_cell.rename(columns={'idx':'idt_tissue'}, inplace=True)
 res_cell = res_cell.merge(df_tt_idt)
-# res_cell = res_cell.merge(df_cells_long.drop(columns='ds'))
-
 
 # Loop over each combination and the relationship between the n cut-off
 q_seq = np.arange(0.05,1,0.05)
@@ -321,7 +324,7 @@ for jj, cell in enumerate(cells):
     for kk, thresh in enumerate(thresh_train):
         for conn in conn_seq:
             print('cell=%s, thresh=%.5f, conn=%i' % (cell, thresh, conn))
-            tmp_df2 = tmp_df1.query('conn==@conn & thresh==@thresh').reset_index(None, True)
+            tmp_df2 = tmp_df1.query('conn==@conn & thresh==@thresh').reset_index(None, drop=True)
             n_seq = np.sort(tmp_df2.query('tt=="val"').n.unique())
             if len(n_seq) > len(q_seq):
                 n_seq = np.quantile(n_seq, q_seq)
@@ -333,7 +336,7 @@ for jj, cell in enumerate(cells):
                 tmp_n = tmp_n.reset_index().assign(cell=cell,thresh=kk,conn=conn,n=n)
                 holder.append(tmp_n)
 # Merge and visually inspect trade-off
-res_rho = pd.concat(holder).reset_index(None,True)
+res_rho = pd.concat(holder).reset_index(None,drop=True)
 res_rho.tt = pd.Categorical(res_rho.tt,list(di_tt)).map(di_tt)
 # Melt on rho vs r2
 res_rho = res_rho.melt(['tt','cell','thresh','conn','n'],None,'msr')
@@ -351,7 +354,7 @@ res_rho_star = res_rho.merge(res_rho_star.drop(columns='value'),'inner')
 holder_n = []
 di_conn = {'logits':holder_logits.copy(), 'post':np.zeros(holder_logits.shape),
            'idt_tissue':df_tt.idt_tissue.values,
-           'thresh':np.zeros(2), 'conn':np.zeros(2), 'n':np.zeros(2)}
+           'cells':cells, 'thresh':np.zeros(n_cells), 'conn':np.zeros(n_cells), 'n':np.zeros(n_cells)}
 for jj, cell in enumerate(cells):
     phat_train = sigmoid(holder_logits[idx_train, jj, :, :])
     phat_rest = sigmoid(holder_logits[idx_rest, jj, :, :])
@@ -360,7 +363,7 @@ for jj, cell in enumerate(cells):
     thresh_train = np.quantile(phat_train[ybin_train==1], np.linspace(0, 1, nquant)[1:-1])
     for msr in tmp_star.msr.unique():
         print('~~~~ cell = %s, msr=%s ~~~~' % (cell, msr))
-        tmp_star_msr = tmp_star.query('msr==@msr').reset_index(None, True)
+        tmp_star_msr = tmp_star.query('msr==@msr').reset_index(None, drop=True)
         thresh_idx_star = tmp_star_msr.thresh[0]
         n_star = tmp_star_msr.n[0]
         conn_star = tmp_star_msr.conn[0]
@@ -386,7 +389,7 @@ for jj, cell in enumerate(cells):
             tmp2 = np.stack([phat2lbl(yhat_rest[i], thresh_star, n_star, conn_star) for i in range(nrest)],axis=0)
             di_conn['post'][:, jj, :, :] = np.vstack([tmp1, tmp2])
             del tmp1, tmp2
-res_scatter = pd.concat(holder_n).reset_index(None, True)
+res_scatter = pd.concat(holder_n).reset_index(None, drop=True)
 res_scatter.tt = pd.Categorical(res_scatter.tt,list(di_tt)).map(di_tt)
 
 # Save for later
@@ -422,7 +425,7 @@ gg_scatter_unet = (pn.ggplot(df_unet,pn.aes(x='est',y='act',color='tt')) +
     pn.scale_color_discrete(name='Dataset') + 
     pn.geom_abline(slope=1,intercept=0,color='black',linetype='--') + 
     pn.facet_wrap('~cell+tt',scales='free',nrow=2) + 
-    pn.theme(subplots_adjust={'wspace': 0.20, 'hspace':0.20}) + 
+    pn.theme(subplots_adjust={'wspace': 0.20, 'hspace':0.40}) + 
     pn.guides(color=False) + 
     pn.labs(x='Predicted',y='Actual'))
 gg_save('gg_scatter_unet.png', dir_figures, gg_scatter_unet, 13, 6)
@@ -513,9 +516,4 @@ gg_perf_star = (pn.ggplot(res_cell_perf,pn.aes(x='msr',y='value',color='cell')) 
     pn.theme(subplots_adjust={'wspace': 0.25}) + 
     pn.facet_wrap('~tt',nrow=2))
 gg_save('gg_perf_star.png', dir_figures, gg_perf_star, 6, 5)
-# ,scales='free_y'
-
-
-
-
 

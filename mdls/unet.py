@@ -31,6 +31,7 @@ class UNet(nn.Module):
         super(UNet, self).__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes
+        self.bl = bl
         self.inc = DoubleConv(n_channels, bl*2**0, batchnorm)
         self.down1 = Down(bl*2**0, bl*2**1, batchnorm)
         self.down2 = Down(bl*2**1, bl*2**2, batchnorm)

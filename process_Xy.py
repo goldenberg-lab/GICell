@@ -53,7 +53,7 @@ dat_points = pd.DataFrame({'tt':tt_points,'points':fn_points + fn_points_val})
 dat_points = dat_points.assign(fn = lambda x: x.points.str.split('\\.', expand=True).iloc[:, 0])
 dat_images = pd.DataFrame({'tt':tt_images,'images':fn_images + fn_images_val})
 dat_images = dat_images.assign(fn = lambda x: x.images.str.split('\\.', expand=True).iloc[:, 0])
-dat_images = dat_images.query("fn.str.contains('^cleaned')").reset_index(None,True)
+dat_images = dat_images.query("fn.str.contains('^cleaned')").reset_index(None, drop=True)
 
 # Merge and check
 dat_pimages = dat_points.merge(dat_images,'left',['tt','fn'])
@@ -117,7 +117,7 @@ err = pd.DataFrame(holder_err,columns=['act','est']).assign(pct=lambda x: np.abs
 err.sort_values('pct',ascending=False).head()
 
 # Merge the pts
-df_pts = pd.concat(holder_df).reset_index(None, True)
+df_pts = pd.concat(holder_df).reset_index(None, drop=True)
 
 # Make sure all images exist
 assert all([[di_data[tt][idt]['img'].shape[0] > 0 for idt in di_data[tt]] for tt in di_data.keys()])
@@ -138,6 +138,3 @@ for ds in di_data:
     print(ds)
     path_dump = os.path.join(dir_output, 'annot_' + ds + '.pickle')
     hickle.dump(di_data[ds], path_dump, 'w')
-    hickle.dump({'a':1,'b':2}, path_dump, 'w')
-    hickle.load(path_dump)
-    

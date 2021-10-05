@@ -12,8 +12,8 @@ def get_num_label(arr, connectivity):
     res = label(input=arr, connectivity=connectivity, return_num=True)[1]
     return res
 
-# arr = yhat_rest[i].copy(); connectivity=1; idx=idt_rest.values[i]
-def lbl_freq(arr, connectivity, idx=None):
+# arr = yhat_thresh_k.copy(); connectivity=conn_k; idx=None
+def lbl_freq(arr, connectivity, idx=None, ret_clust=False):
     clust_grps = label(arr, connectivity=connectivity)
     freq = pd.value_counts(clust_grps[np.nonzero(clust_grps)])
     if len(freq) == 0:
@@ -22,7 +22,10 @@ def lbl_freq(arr, connectivity, idx=None):
         freq = freq.reset_index().rename(columns={'index':'clust',0:'n'})
     if idx is not None:
         freq.insert(0,'idx',idx)
-    return freq
+    if ret_clust:
+        return freq, clust_grps
+    else:
+        return freq
 
 # # phat=phat_train[0].copy(); thresh=thresh_star; n=n_star; connectivity=conn_star
 # # del phat, thresh, n, connectivity, yhat, lbls, freq, vkeep

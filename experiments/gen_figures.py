@@ -1,13 +1,16 @@
 # Script to provide example figures of data/labels/prediction
 
 import os
+import sys
+sys.path.append(os.path.join(os.getcwd()))
 import torch
 import numpy as np
 import pandas as pd
+import hickle
 from PIL import Image
 from cells import valid_cells, inflam_cells
-from funs_support import read_pickle, zip_points_parse, find_dir_cell, t2n, sigmoid
-from funs_stats import lbl_freq
+from funs_support import read_pickle, zip_points_parse, find_dir_cell
+from funs_inf import khat2df, phat2df, inf_thresh_cluster
 
 import seaborn as sns
 import matplotlib
@@ -73,10 +76,13 @@ df_points = df_points.query('inflam').drop(columns='inflam')
 df_points = df_points.assign(cell=lambda x: np.where(x.cell == 'eosinophil','eosin','inflam'))
 df_points['cell'] = pd.Categorical(df_points['cell'],['eosin','inflam'])
 
+# Calculate image size
+h, w = arr_images.shape[1:3]
+
 ###################################
 ## --- (2) LOAD IN THE MODEL --- ##
 
-# Load in the "best" models for each type
+# (i) Load in the "best" models for each type
 fn_best = pd.Series(os.listdir(dir_best))
 fn_best = fn_best.str.split('\\_',1,True)
 fn_best.rename(columns={0:'cell',1:'fn'},inplace=True)
@@ -87,26 +93,32 @@ di_mdl = {k1: {k2:v2 for k2, v2 in read_pickle(v1).items() if k2 in ['mdl','hp']
 dat_hp = pd.concat([v['hp'].assign(cell=k) for k,v in di_mdl.items()])
 # Keep only model and set to inference mode
 di_mdl = {k:v['mdl'].eval() for k,v in di_mdl.items()}
+# Extract the module from DataParallel if exists
+di_mdl = {k:v.module if hasattr(v,'module') else v for k,v in di_mdl.items()}
+di_mdl = {k:v.float() for k,v in di_mdl.items()}
+# Use model order for cells
+cells = list(di_mdl.keys())
+n_cells = len(cells)
 
-# Make inference
-arr_phat = np.zeros(arr_images.shape[0:3] + (2,))
-arr_posthoc = arr_phat.copy()
+# (ii) Extract the di_conn for optimal hyperparameter tuning
+path_conn = os.path.join(dir_output,'di_conn.pickle')
+di_conn = hickle.load(path_conn)
+# Keep only the hyperparameters
+cn_conn = ['cells','thresh','conn','n']
+di_conn = {k:v for k,v in di_conn.items() if k in cn_conn}
+
+
+# (iii) Get image inference
+arr_phat = np.zeros([k, h, w, n_cells])
+arr_yhat = arr_phat.copy()
+arr_khat = arr_yhat.copy()
 for j in range(k):
     print('Inference of %i of %i' % (j+1, k))
-    # Convert images into tensor for model (sample x channel x h x w)
-    img = arr_images[[j]].transpose(0,3,1,2)
-    img = torch.tensor(img / 255, dtype=torch.float, device=device)
-    # Get inferences for each
-    with torch.no_grad():
-        phat_j = {k: sigmoid(np.squeeze(t2n(v(img)))) for k,v in di_mdl.items()}
-    
-    # Apply post-hoc on threshold
-    phat_j['inflam']
-    lbl_freq(arr=,connectivity=1)
-    
-    # Get centre
-
-
+    img_j = arr_images[j]
+    phat, yhat, khat = inf_thresh_cluster(mdl=di_mdl,conn=di_conn,img=img_j,device=device)
+    arr_phat[j] = np.dstack(phat.values())
+    arr_yhat[j] = np.dstack(yhat.values())
+    arr_khat[j] = np.dstack(khat.values())
 
 
 ##############################
@@ -114,41 +126,48 @@ for j in range(k):
 
 # Merge all the data together
 di = dict.fromkeys(fn_idt_k)
-
-df_points.query('fn==@fn').drop(columns='fn')
 for j, fn in enumerate(fn_idt_k):
-    di[fn] = dict.fromkeys(['points','img','inf'])
-    di[fn]['points'] = df_points.query('fn==@fn').drop(columns='fn').reset_index(None, True)
+    di[fn] = dict.fromkeys(['points','img','yhat','khat'])
+    di[fn]['points'] = df_points.query('fn==@fn').drop(columns='fn').reset_index(None, drop=True)
     di[fn]['img'] = arr_images[j]
-    # di[fn]['inf'] = 
+    di[fn]['phat'] = arr_phat[j]
+    di[fn]['yhat'] = arr_yhat[j]
+    di[fn]['khat'] = arr_khat[j]
+    
 
-palette = {"eosin":"tab:green",
-           "inflam":"tab:orange"}
+# Set colors
+palette = {"eosin":"tab:green", "inflam":"tab:orange"}
 
 plt.close()
-nc = 3  # data, annotations, prediction
+nc = 3  # ground-truth, sigmoid, cluster
 nr = k
 fig, axes = plt.subplots(nrows=nr, ncols=nc, figsize=(nc*5, nr*5))
-for i in range(1):
-    for j in range(nc):
-        print('row = %i, col = %i' % (i, j))
-        row, col = i, j
-        ax = axes[i,j]
-        fn = fn_idt_k[row]
-        scatter = di[fn]['points'].copy()
-        img_val = di[fn]['img'].copy()
-        if col == 0:  # image
-            print('image')
-            ax.imshow(img_val)
-        elif col == 1:  # annotations
-            print('scatter')
-            sns.scatterplot(x='x', y='y', hue='cell', hue_order=list(palette), palette=palette, data=scatter, ax=ax)
-        else:
-            print('both')
-            ax.imshow(img_val)
-            sns.scatterplot(x='x', y='y', hue='cell', hue_order=list(palette), palette=palette, data=scatter, ax=ax)
+for row in range(nr):
+    fn = fn_idt_k[row]
+    points = di[fn]['points'].copy()
+    img = di[fn]['img'].copy()
+    phat = di[fn]['phat'].copy()
+    khat = di[fn]['khat'].copy()
+    points_khat = khat2df(mat=khat, cells=cells)
+    points_phat = phat2df(mat=phat, cells=cells)
+    # break
+    for col in range(nc):
+        print('row = %i, col = %i' % (row, col))
+        ax = axes[row, col]
+        if col == 0:  # ground-truth
+            ax.set_title('ground truth')
+            ax.imshow(img,origin='lower')
+            sns.scatterplot(x='x', y='y', hue='cell', hue_order=list(palette), palette=palette, data=points, ax=ax)
+        elif col == 1:  # sigmoid + threshold
+            ax.set_title('sigmoid + theshold')
+            ax.imshow(img,origin='lower')
+            ax.scatter(x=points_phat['x'],y=points_phat['y'],marker='.',s=1,linewidths=0,c=points_phat['cell'].map(palette))
+        else:  # post-hoc clustering
+            ax.set_title('post-hoc')
+            ax.imshow(img,origin='lower')
+            sns.scatterplot(x='x', y='y', hue='cell', hue_order=list(palette), palette=palette, data=points_khat, ax=ax)
+    # break
 # Save output
 fig.savefig(os.path.join(dir_figures,'ml_pipeline.png'))
 plt.close()
-
 

@@ -10,21 +10,22 @@ dir_cropped = os.path.join(dir_ordinal, 'cropped')
 
 path_breaker = os.path.join(dir_ordinal,'df_codebreaker.csv')
 df_breaker = pd.read_csv(path_breaker).drop(columns='file')
-df_breaker['tissue2'] = df_breaker.file2.str.replace('.png','').str.split('_').apply(lambda x: x[-1])
+df_breaker['tissue2'] = df_breaker.file2.str.replace('.png','',regex=False).str.split('_').apply(lambda x: x[-1])
 
 # Image data on the GICell side
 fn_images = pd.Series(os.listdir(dir_images))
 fn_images = fn_images[fn_images.str.contains('png$')].reset_index(None,drop=True)
 df_images = fn_images.str.split('\\_',2,True).drop(columns=[0])
 df_images.rename(columns={1:'idt',2:'tissue'}, inplace=True)
-df_images['tissue'] = df_images.tissue.str.replace('.png','')
+df_images['tissue'] = df_images.tissue.str.replace('.png','',regex=False)
 tmp = df_images.tissue.str.split('\\_|\\-',2,True)
 tmp.rename(columns={0:'tissue',1:'num',2:'alt'}, inplace=True)
-df_images = pd.concat([df_images.drop(columns='tissue'),tmp],1)
+df_images = pd.concat(objs=[df_images.drop(columns='tissue'),tmp],axis=1)
 df_images['fn'] = fn_images.copy()
 cn_sort = ['idt','tissue','num']
 df_images = df_images.sort_values(cn_sort).reset_index(None,drop=True)
 
+print('Expect leaned_6EAWUIY4_Cecum_55.png not to align because it has cecum + cecum-001')
 holder_check = []
 for ii, rr in df_images.iterrows():
     idt, tissue, fn = rr['idt'], rr['tissue'], rr['fn']
@@ -43,12 +44,12 @@ for ii, rr in df_images.iterrows():
                 # Check that files are the same
                 check = open(path_GICell,"rb").read() == open(path_Ordinal,"rb").read()
                 if not check:
-                    print('file %s does not align (%i of %i)' % (fn, ii+1, len(df_images)))
+                    print('file %s does not align (%i of %i)' % (fn, ii+1, len(df_images)))                    
     holder_check.append(pd.Series([path_GICell, path_Ordinal, check]))
-res_check = pd.DataFrame(pd.concat(holder_check,1).T)
+res_check = pd.DataFrame(pd.concat(objs=holder_check,axis=1).T)
 res_check.columns = ['path_Cell','path_Ordinal','check']
 res_check.check = res_check.check.astype(bool)
-res_check = pd.concat([df_images[cn_sort],res_check],1)
+res_check = pd.concat(objs=[df_images[cn_sort],res_check],axis=1)
 print('Does not align == ')
 print(res_check.loc[~res_check.check,cn_sort].T)
 
