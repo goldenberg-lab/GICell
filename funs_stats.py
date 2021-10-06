@@ -12,6 +12,36 @@ def get_num_label(arr, connectivity):
     res = label(input=arr, connectivity=connectivity, return_num=True)[1]
     return res
 
+"""
+FUNCTION TO GET PAIRWISE MEASURES FOR SOME STAT
+"""
+# df=dat_rho_n.query('cell=="eosin"').reset_index(None,drop=True)
+# stat=r2_score;lower=True
+def get_pairwise(df, stat, lower=True):
+    assert isinstance(df, pd.DataFrame)
+    cn = list(df.columns)
+    n_cn = len(cn)
+    holder = []
+    if lower:
+        for i in range(n_cn-1):
+            cn_i = cn[i]
+            for j in range(i+1,n_cn):
+                cn_j = cn[j]
+                stat_ij = stat(df[cn_i],df[cn_j])
+                tmp = pd.DataFrame({'cn_1':cn_i,'cn_2':cn_j,'stat':stat_ij},index=[0])
+                holder.append(tmp)
+    else:
+        for i in range(n_cn):
+            cn_i = cn[i]
+            for j in range(n_cn):
+                cn_j = cn[j]
+                stat_ij = stat(df[cn_i],df[cn_j])
+                tmp = pd.DataFrame({'cn_1':cn_i,'cn_2':cn_j,'stat':stat_ij},index=[0])
+                holder.append(tmp)
+    res = pd.concat(holder).reset_index(None,drop=True)
+    return res
+
+
 # arr = yhat_thresh_k.copy(); connectivity=conn_k; idx=None
 def lbl_freq(arr, connectivity, idx=None, ret_clust=False):
     clust_grps = label(arr, connectivity=connectivity)

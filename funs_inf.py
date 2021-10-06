@@ -56,7 +56,6 @@ def khat2df(mat, cells):
             holder.append(tmp_df)
     # Calculate the centroid of each point
     res = pd.concat(holder).groupby(['cell','grp'])[['y','x']].mean().reset_index()
-    res[['y','x']] = res[['y','x']].round(0).astype(int)
     return res
 
 

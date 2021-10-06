@@ -55,6 +55,11 @@ def find_dir_GI():
         sys.exit('Where are we?!')
     return dir_GI
 
+# Quiet print
+def vprint(stmt, cond=True):
+    if cond:
+        print(stmt)
+
 
 # Zip a list of files
 def zip_files(lst, fold, zip_fn):
@@ -74,7 +79,7 @@ def hash_hp(df, method='hash_array'):
     assert isinstance(df, pd.DataFrame)
     assert df.columns.isin(cn_hp).sum() == len(cn_hp)
     assert len(df) == 1
-    df = df[cn_hp].copy().reset_index(None,True)
+    df = df[cn_hp].copy().reset_index(None,drop=True)
     df = df.loc[0].reset_index().rename(columns={'index':'hp',0:'val'})
     hp_string = pd.Series([df.apply(lambda x: x[0] + '=' + str(x[1]), 1).str.cat(sep='_')])
     code_hash = fun(hp_string)[0]
@@ -137,7 +142,7 @@ def makeifnot(path):
 def str_subset(ss, pat):
     if not isinstance(ss, pd.Series):
         ss = pd.Series(ss)
-    ss = ss[ss.str.contains(pat)].reset_index(None, True)
+    ss = ss[ss.str.contains(pat)].reset_index(None, drop=True)
     return ss
 
 
@@ -261,19 +266,19 @@ fn:             name of the file
 dir:            folder where file lives
 valid_cells:    list of cells
 """
-def zip_points_parse(fn, dir, valid_cells):
+def zip_points_parse(fn, dir, valid_cells,verbose=False):
     tt = fn.split('.')[-1]
     path = os.path.join(dir, fn)
     assert os.path.exists(path)
     if tt == 'tsv':
-        print('tsv file')
+        vprint('tsv file', verbose)
         df = drop_unnamed(pd.read_csv(path, sep='\t'))
         df.rename(columns={'class':'name'},inplace=True,errors='ignore')
         df = df[['x','y','name']]
         df.rename(columns={'name':'cell'}, inplace=True)
         df['cell'] = df.cell.str.lower()
         # Remove any rows with missing cell names
-        df = df[df.cell.notnull()].reset_index(None,True)
+        df = df[df.cell.notnull()].reset_index(None, drop=True)
         # Remove trailing "s" 
         df['cell'] = df.cell.str.replace('s$','',regex=True)
         # Remove " cell"
@@ -283,7 +288,7 @@ def zip_points_parse(fn, dir, valid_cells):
             print('New cells: %s' % d_cells.str.cat(sep=', '))
             sys.exit('Unidentified cell')
     else:
-        print('zip file')
+        vprint('zip file', verbose)
         path_tmp = os.path.join(dir, 'tmp')
         with ZipFile(file=path, mode='r') as zf:
             zf.extractall(path_tmp)
