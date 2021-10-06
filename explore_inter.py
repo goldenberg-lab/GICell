@@ -2,9 +2,7 @@
 
 import argparse
 
-from numpy.lib.arraysetops import isin
-from plotnine.facets.facet_wrap import facet_wrap
-from plotnine.themes.themeable import legend_direction
+from plotnine.geoms.geom_hline import geom_hline
 parser = argparse.ArgumentParser()
 parser.add_argument('-a','--annotators', nargs='+', help='List of folders for the different annotators', required=True)
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
@@ -13,9 +11,9 @@ annotators = args.annotators
 nfill = args.nfill
 print('args = %s' % args)
 
-# # For debugging
-# annotators = ['dua', 'oscar']
-# nfill=1
+# For debugging
+annotators = ['dua', 'oscar']
+nfill=1
 
 # number of padded points (i.e. count inflator)
 fillfac = (2 * nfill + 1) ** 2
@@ -28,6 +26,7 @@ import hickle
 import numpy as np
 import pandas as pd
 import plotnine as pn
+from sklearn.metrics import mean_absolute_error as mae
 from cells import valid_cells, inflam_cells
 from funs_support import find_dir_cell, zip_points_parse, read_pickle
 from funs_inf import khat2df, inf_thresh_cluster
@@ -57,6 +56,11 @@ else:
     n_cuda, cuda_index = None, None
 device = torch.device('cuda:0' if use_cuda else 'cpu')
 
+
+# Set up dictionaries
+di_anno = {'unet':'UNet', 'post':'Post-hoc', 'dua':'Dua', 'oscar':'Oscar'}
+di_cell = {'eosin':'Eosinophil','inflam':'Inflammatory'}
+di_fun = {'mean_absolute_error':'MAE', 'rho':'Spearman'}
 
 ######################################
 # --- (1) LOAD INTER-ANNOTATIONS --- #
@@ -169,22 +173,74 @@ assert df_anno_n.groupby('anno').size().var() == 0, 'Huh?! One annotator has mor
 ####################################
 # --- (3) AGGREGATE STATISTICS --- #
 
-di_anno = {'unet':'UNet', 'post':'Post-hoc', 'dua':'Dua', 'oscar':'Oscar'}
-di_cell = {'eosin':'Eosinophil','inflam':'Inflammatory'}
-
+# Set up parameters
 n_bs = 250
+alpha = 0.05
+lst_funs = [rho, mae]
+cn_gg = ['cell','fun','cn_1','cn_2']
 
-# Get pairwise
+# Get pairwise matrix
 df_pairwise_n = df_anno_n.pivot_table('n',['cell','idt'],'anno')
 
-# (i) Get pairwise correlation and uncertainty
-
-
-dat_rho_n = df_pairwise_n.groupby('cell').apply(lambda x: get_pairwise(x,rho))
+# (i) Pairwise rho/mae with uncertainty
+dat_rho_n = pd.concat(objs=[df_pairwise_n.groupby('cell').apply(get_pairwise,fun,False) for fun in lst_funs],axis=0)
 dat_rho_n = dat_rho_n.reset_index().drop(columns='level_1')
-dat_rho_n.rename(columns={'stat':'rho'},inplace=True)
 
-# (ii) Plot all pairwise
+# Repeat with the bootstrap
+holder_bs = []
+for i in range(n_bs):
+    tmp_df = df_pairwise_n.groupby('cell').sample(frac=1,replace=True,random_state=i)
+    tmp_rho = pd.concat(objs=[tmp_df.groupby('cell').apply(get_pairwise,fun,False) for fun in lst_funs],axis=0)
+    tmp_rho = tmp_rho.reset_index().drop(columns='level_1').assign(bidx=i)
+    holder_bs.append(tmp_rho)
+dat_rho_n_bs = pd.concat(holder_bs)
+dat_rho_n_bs = dat_rho_n_bs.groupby(cn_gg).stat.quantile([alpha/2,1-alpha/2]).reset_index()
+dat_rho_n_bs = dat_rho_n_bs.pivot_table('stat',cn_gg,'level_'+str(len(cn_gg))).reset_index()
+dat_rho_n_bs.rename(columns={alpha/2:'lb',1-alpha/2:'ub'},inplace=True)
+dat_rho_n = dat_rho_n.merge(dat_rho_n_bs)
+dat_rho_n['fun'] = dat_rho_n['fun'].map(di_fun)
+dat_rho_n[['cn_1','cn_2']] = dat_rho_n[['cn_1','cn_2']].apply(lambda x: x.map(di_anno))
+dat_rho_n = dat_rho_n.query('cn_1 != cn_2').reset_index(None,drop=True)
+
+# (ii) Plot correlation/MAE with humans on x
+tmp_anno = pd.Series(annotators).map(di_anno)
+tmp = dat_rho_n.query('cn_1.isin(@tmp_anno)')
+posd = pn.position_dodge(0.5)
+gg_anno_rho_n = (pn.ggplot(tmp,pn.aes(x='cn_1',y='stat',color='cn_2')) + 
+    pn.theme_bw() + pn.labs(x='Annotator',y='Value') + 
+    pn.scale_color_discrete(name='Annotator') + 
+    pn.geom_point(position=posd) + 
+    pn.theme(subplots_adjust={'wspace': 0.20}) + 
+    pn.geom_linerange(pn.aes(ymin='lb',ymax='ub'),position=posd) + 
+    pn.ggtitle('Linerange shows 95% bootstrapped CI') + 
+    pn.facet_wrap('~fun+cell',labeller=pn.labeller(cell=di_cell),scales='free_y',ncol=2))
+gg_save('gg_anno_rho_n.png',dir_figures,gg_anno_rho_n,8,7)
+
+# (iii) Is the difference statistically significant?
+dat_rho_bs_d = pd.concat(holder_bs).query('cn_1.isin(@annotators)')
+dat_rho_bs_d = dat_rho_bs_d.query('cn_1 != cn_2').reset_index(None,drop=True)
+tmp = dat_rho_bs_d.query('cn_2.isin(@annotators)').rename(columns={'stat':'human'}).drop(columns=['cn_2'])
+dat_rho_bs_d = dat_rho_bs_d.merge(tmp).query('~cn_2.isin(@annotators)')
+dat_rho_bs_d = dat_rho_bs_d.assign(dstat=lambda x: x.stat - x.human)
+dat_rho_bs_d = dat_rho_bs_d.groupby(cn_gg).dstat.quantile([alpha/2,0.5,1-alpha/2]).reset_index()
+dat_rho_bs_d = dat_rho_bs_d.pivot_table('dstat',cn_gg,'level_'+str(len(cn_gg))).reset_index()
+dat_rho_bs_d = dat_rho_bs_d.rename(columns={alpha/2:'lb',1-alpha/2:'ub',0.5:'dstat'})
+dat_rho_bs_d[['cn_1','cn_2']] = dat_rho_bs_d[['cn_1','cn_2']].apply(lambda x: pd.Categorical(x.map(di_anno),np.sort(list(di_anno.values()))))
+dat_rho_bs_d['fun'] = dat_rho_bs_d['fun'].map(di_fun)
+
+gg_anno_dstat_n = (pn.ggplot(dat_rho_bs_d,pn.aes(x='cn_1',y='dstat',color='cn_2')) + 
+    pn.theme_bw() + pn.labs(x='Annotator',y='Difference in statistic to human') + 
+    pn.scale_color_discrete(name='Annotator') + 
+    pn.geom_point(position=posd) + 
+    pn.geom_hline(yintercept=0) + 
+    pn.theme(subplots_adjust={'wspace': 0.20},axis_title_y=pn.element_text(margin={'r':30})) + 
+    pn.geom_linerange(pn.aes(ymin='lb',ymax='ub'),position=posd) + 
+    pn.ggtitle('Linerange shows 95% bootstrapped CI') + 
+    pn.facet_wrap('~fun+cell',labeller=pn.labeller(cell=di_cell),scales='free_y',ncol=2))
+gg_save('gg_anno_dstat_n.png',dir_figures,gg_anno_dstat_n,8,7)
+
+
+# (iv) Plot all pairwise scatter
 holder = []
 for anno in di_anno:
     tmp = df_pairwise_n.reset_index().drop(columns='idt').melt(['cell',anno]).assign(anno_x=anno)
@@ -203,6 +259,9 @@ gg_anno_pairwise_n = (pn.ggplot(dat_scatter,pn.aes(x='x',y='y',color='anno_y')) 
     pn.scale_color_discrete(name='Annotator-color'))
 gg_save('gg_anno_pairwise_n.png',dir_figures,gg_anno_pairwise_n,14,7)
 
+
+###################################
+# --- (4) SPATIAL CORRELATION --- #
 
 
 

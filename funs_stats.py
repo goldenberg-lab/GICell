@@ -39,6 +39,7 @@ def get_pairwise(df, stat, lower=True):
                 tmp = pd.DataFrame({'cn_1':cn_i,'cn_2':cn_j,'stat':stat_ij},index=[0])
                 holder.append(tmp)
     res = pd.concat(holder).reset_index(None,drop=True)
+    res.insert(0,'fun',stat.__name__)
     return res
 
 
