@@ -24,6 +24,11 @@ else
     echo "hickle already exists"
 fi
 
-conda list --explicit > conda_env.txt  # git to detect if env has changed
+n_cuda=$(conda list --explicit | grep pytorch | grep cuda | wc -w)
 
-
+if [[ "$n_cuda" -gt 0 ]]; then
+    echo "Exporting conda environment"
+    conda list --explicit > conda_env.txt  # git to detect if env has changed
+else
+    echo "pytorch is not cuda, will not export"
+fi

@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import numpy as np
 from funs_support import find_dir_cell
 
 dir_base = find_dir_cell()
@@ -11,10 +12,11 @@ dir_cropped = os.path.join(dir_ordinal, 'cropped')
 path_breaker = os.path.join(dir_ordinal,'df_codebreaker.csv')
 df_breaker = pd.read_csv(path_breaker).drop(columns='file')
 df_breaker['tissue2'] = df_breaker.file2.str.replace('.png','',regex=False).str.split('_').apply(lambda x: x[-1])
+u_QID = df_breaker.QID.unique()
 
 # Image data on the GICell side
 fn_images = pd.Series(os.listdir(dir_images))
-fn_images = fn_images[fn_images.str.contains('png$')].reset_index(None,drop=True)
+fn_images = fn_images[fn_images.str.contains('png$',regex=True)].reset_index(None,drop=True)
 df_images = fn_images.str.split('\\_',2,True).drop(columns=[0])
 df_images.rename(columns={1:'idt',2:'tissue'}, inplace=True)
 df_images['tissue'] = df_images.tissue.str.replace('.png','',regex=False)
@@ -23,15 +25,19 @@ tmp.rename(columns={0:'tissue',1:'num',2:'alt'}, inplace=True)
 df_images = pd.concat(objs=[df_images.drop(columns='tissue'),tmp],axis=1)
 df_images['fn'] = fn_images.copy()
 cn_sort = ['idt','tissue','num']
-df_images = df_images.sort_values(cn_sort).reset_index(None,drop=True)
+df_images = df_images.sort_values(cn_sort)
+u_idt = df_images.idt.unique()
+# Keep only HSK images
+assert len(np.setdiff1d(u_QID,u_idt))==0, 'Breaker has patients not found in folder'
+df_images = df_images[df_images['idt'].isin(u_QID)].reset_index(None,drop=True)
 
-print('Expect leaned_6EAWUIY4_Cecum_55.png not to align because it has cecum + cecum-001')
+print('Expect cleaned_6EAWUIY4_Cecum_55.png not to align because it has cecum + cecum-001')
 holder_check = []
 for ii, rr in df_images.iterrows():
     idt, tissue, fn = rr['idt'], rr['tissue'], rr['fn']
     path_GICell = os.path.join(dir_images, fn)
     match = df_breaker.query('QID==@idt & tissue==@tissue')
-    tt = list(match['type'])[0]    
+    tt = list(match['type'])[0]
     path_Ordinal, check = '', False
     for tish in match.tissue2.unique():
         path_tissue = os.path.join(dir_cropped, tt, idt, tish)

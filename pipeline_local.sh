@@ -11,10 +11,8 @@ echo "--- (1) CHECK ALIGNMENT BETWEEN ORDINAL AND CELL ---"
 python -u check_crop_GI.py
 # Print statements: only 6EAWUIY4_Cecum_55 (due to Cecum vs Cecum-001)
 
-
 echo "--- (2) CHECK CONDA ENVIRONMENT ---"
 source set_env.sh
-
 
 echo "--- (3) CHECKING CUDA/ANNO STATUS ---"
 # Check whether CUDA-tensor is possible
@@ -25,7 +23,6 @@ python -u check_anno_status.py
 
 # Confirm that image rotations/flips work as expected
 python -u check_img_trans.py
-
 
 echo "--- (4) GENERATE DATA ---"
 # nfill:    Number of pixels to pad around annotation point
