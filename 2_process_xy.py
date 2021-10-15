@@ -1,4 +1,4 @@
-# --- SCRIPT TO --- #
+# SCRIPT TO SAVE ALL LABELS AND IMAGES AS DICTIONARIES
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -15,16 +15,16 @@ fillfac = (2 * nfill + 1) ** 2
 print('nfill: %i, s2: %.1f, fillfac: x%i' % (nfill, s2, fillfac))
 
 # Load modules
+import warnings
+warnings.filterwarnings( "ignore", module = "matplotlib\..*" )
 import os
 import hickle
 import numpy as np
 import pandas as pd
 from PIL import Image
-
-import warnings
-warnings.filterwarnings( "ignore", module = "matplotlib\..*" )
-from funs_support import zip_points_parse, label_blur, find_dir_cell, makeifnot
 from cells import valid_cells
+from funs_support import find_dir_cell, makeifnot
+from funs_label import zip_points_parse, label_blur
 
 # Set directories
 dir_base = find_dir_cell()
@@ -63,6 +63,7 @@ assert not dat_pimages.groupby('tt').apply(lambda x: x.idt.duplicated().any()).a
 # Count
 n_images = len(dat_pimages)
 
+
 ##############################
 ## --- (2) PROCESS DATA --- ##
 
@@ -71,7 +72,7 @@ di_data = dat_pimages.groupby('tt').apply(lambda x: dict(zip(x.idt,[[] for z in 
 di_data = di_data.to_dict()
 
 cn_ord = ['ds','idt_tissue','cell','y','x']
-tol = 2e-2
+tol_pct, tol_dcell = 0.02, 2
 holder_err = np.zeros([n_images,2])
 holder_df = []
 for ii, rr in dat_pimages.iterrows():
@@ -83,7 +84,7 @@ for ii, rr in dat_pimages.iterrows():
     path_points = os.path.join(dir_points, tt)
     df_ii = zip_points_parse(fn=points, dir=path_points, valid_cells=valid_cells)
     df_ii = df_ii.assign(idt_tissue=idt_tissue, ds=tt)[cn_ord]
-    holder_df.append(df_ii)
+    holder_df.append(df_ii.assign(ii=ii))
 
     # (ii) Load images
     path_images = os.path.join(dir_images, images)
@@ -94,14 +95,16 @@ for ii, rr in dat_pimages.iterrows():
     idx_xy = df_ii[['y', 'x']].round(0).astype(int).values
     lbls = label_blur(idx=idx_xy, cells=df_ii.cell.values, vcells=valid_cells, shape=img_vals.shape[0:2], fill=nfill, s2=s2)
     est, true = np.sum(lbls) / fillfac, len(idx_xy)
-    assert np.abs(est / true - 1) <= tol
+    pct_err = np.abs(est / true - 1)
+    dcell_err = np.abs(est / true)
+    assert (pct_err <= tol_pct) | (dcell_err <= tol_dcell) , 'Cell discrepancy violated: %s, %i' % (idt, ii)
     holder_err[ii] = [true, est]
     
     # (iv) Check cell-wise discrepancy
     tmp1 = pd.DataFrame({'cell':valid_cells,'est':lbls.sum(0).sum(0)/fillfac})
     tmp2 = df_ii.groupby('cell').size().reset_index().rename(columns={0:'act'})
     cell_check = tmp1.merge(tmp2).assign(pct=lambda x: np.abs(x.est / x.act - 1), dcell=lambda x: np.abs(x.act - x.est) )
-    assert np.all((cell_check['pct'] <= tol) | (cell_check['dcell'] <= 1))
+    assert np.all((cell_check['pct'] <= tol_pct) | (cell_check['dcell'] <= tol_dcell)), 'Cell-wise discrepancy violated: %s, %i' % (idt, ii)
     # (iv) Save to dictionary
     di_data[tt][idt] = {'img':img_vals, 'lbls':lbls}
 
@@ -113,7 +116,7 @@ print(err.sort_values('pct',ascending=False).head())
 df_pts = pd.concat(holder_df).reset_index(None, drop=True)
 
 # Make sure all images exist
-assert all([[di_data[tt][idt]['img'].shape[0] > 0 for idt in di_data[tt]] for tt in di_data.keys()])
+assert all([[di_data[tt][idt]['img'].shape[0] > 0 for idt in di_data[tt]] for tt in di_data.keys()]), 'Missing at least one image'
 
 
 ###########################

@@ -1,9 +1,8 @@
 import os, pickle
 import numpy as np
 import pandas as pd
-from support_funs_GI import stopifnot, torch2array, sigmoid, ljoin, comp_plt, makeifnot
+from support_funs import torch2array, sigmoid, ljoin, comp_plt, makeifnot, intax3
 from time import time
-from support_funs_GI import intax3
 import torch
 from unet_model import UNet
 from sklearn import metrics
@@ -25,7 +24,7 @@ dir_base = os.getcwd()
 dir_output = os.path.join(dir_base, '..', 'output')
 dir_figures = os.path.join(dir_output, 'figures')
 lst_dir = [dir_output, dir_figures]
-[stopifnot(z) for z in lst_dir]
+# assert all([os.path.exists(z) for z in lst_dir])
 dir_checkpoint = os.path.join(dir_output, 'checkpoint')
 dir_aggregate = os.path.join(dir_checkpoint, 'aggregate')
 makeifnot(dir_checkpoint)

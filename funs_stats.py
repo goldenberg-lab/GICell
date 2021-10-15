@@ -1,23 +1,50 @@
-import numpy as np
 import torch
-from funs_support import t2n
+import numpy as np
 import pandas as pd
 from scipy import stats
 from skimage.measure import label
+from arch.bootstrap import IIDBootstrap
+from sklearn.metrics import mean_squared_error as mse
+from funs_support import t2n
 
+# Split dataset by continuous value
+def stratify_continuous(group, score, percent, seed=None):
+    if not isinstance(group, pd.Series):
+        group = pd.Series(group)
+    assert not group.duplicated().any()
+    n = len(score)
+    n_split = int(n * percent)
+    df = pd.DataFrame({'score':np.sort(score)})
+    df = df.rename_axis('idx').reset_index()
+    bins = np.linspace(0, n, n_split+1)
+    df['gg'] = pd.cut(df['idx'],bins,right=False)
+    if seed is not None:
+        np.random.seed(seed)
+    idx_test = df.groupby('gg').sample(n=1).idx.values
+    idx_train = np.setdiff1d(df['idx'], idx_test)
+    di = {'test':idx_test, 'train':idx_train}
+    return di
+
+
+# MSE on normalized values
+def norm_mse(y,yhat):
+    mu, se = y.mean(), y.std()
+    y_til, yhat_til = (y-mu)/se, (yhat-mu)/se
+    return mse(y_til, yhat_til)
+
+# Wrapper to get spearman correlation
 def rho(x, y):
     return np.corrcoef(x, y)[0,1]
 
+# Use skimage's clustering approach to count number of labels
 def get_num_label(arr, connectivity):
     res = label(input=arr, connectivity=connectivity, return_num=True)[1]
     return res
 
-"""
-FUNCTION TO GET PAIRWISE MEASURES FOR SOME STAT
-"""
-# df=dat_rho_n.query('cell=="eosin"').reset_index(None,drop=True)
-# stat=r2_score;lower=True
+# Get all pairwise measures for some stat (function)
 def get_pairwise(df, stat, lower=True):
+    # df=dat_rho_n.query('cell=="eosin"').reset_index(None,drop=True)
+    # stat=r2_score;lower=True
     assert isinstance(df, pd.DataFrame)
     cn = list(df.columns)
     n_cn = len(cn)
@@ -140,3 +167,26 @@ def get_YP(dataloader, model, h, w, ret_Y=False, ret_P=False):
         mat[:,:,jj] = X
         jj += 1
     return mat
+
+
+# Performs BCA bootstrap on some function
+def bootstrap_metric(act, pred, metric, nbs=999):
+    ci = IIDBootstrap(act, pred).conf_int(metric, reps=nbs, method='bca', size=0.95, tail='two').flatten()
+    return ci[0], ci[1]
+
+# Performs jackknife on some metric
+def jackknife_metric(act, pred, metric):
+    assert len(act) == len(pred)
+    if isinstance(act, pd.Series):
+        act = act.values
+    if isinstance(pred, pd.Series):
+        pred = pred.values
+    n = len(act)
+    vec = np.zeros(n)
+    r2 = metric( act , pred )
+    for ii in range(n):
+        vec[ii] = metric(np.delete(act, ii), np.delete(pred, ii))
+    mi, mx = min(vec), max(vec)
+    bias = r2 - np.mean(vec)
+    mi, mx = mi + bias, mx + bias
+    return mi, mx

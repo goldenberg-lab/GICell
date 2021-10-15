@@ -26,7 +26,8 @@ matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from PIL import Image
 from cells import valid_cells
-from funs_support import stopifnot, zip_points_parse, find_dir_cell
+from funs_support import find_dir_cell
+from funs_label import zip_points_parse
 
 dir_base = find_dir_cell()
 dir_images = os.path.join(dir_base, 'images')
@@ -52,7 +53,7 @@ nhours = [(tnow-os.path.getmtime(os.path.join(dir_points, f)))/(60**2) for f in 
 fn_points = [f for f,n in zip(fn_points,nhours) if n <= n_hours]
 raw_points = pd.Series(fn_points).str.split('\\.', expand=True).iloc[:, 0]
 raw_images = pd.Series(fn_images).str.split('\\.', expand=True).iloc[:, 0]
-stopifnot(raw_points.isin(raw_images).all())
+assert raw_points.isin(raw_images).all()
 print('The following images were annotated within %i hours: %s' %
       (n_hours,', '.join(fn_points)))
 print(len(fn_points))

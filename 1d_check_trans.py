@@ -1,14 +1,14 @@
 # script to make sure that the rotations/flips are working right as well as the unwind
 
 import os
-from funs_support import makeifnot, t2n, find_dir_cell
-from funs_plotting import plt_single
 import imageio
 import requests
-from io import BytesIO
-import numpy as np
-from funs_torch import img2tensor, randomFlip, randomRotate, all_img_flips
 import torch
+import numpy as np
+from io import BytesIO
+from funs_support import makeifnot, t2n, find_dir_cell
+from funs_plotting import plt_single
+from funs_torch import img2tensor, randomFlip, randomRotate, all_img_flips
 
 dir_base = find_dir_cell()
 dir_output = os.path.join(dir_base, 'output')

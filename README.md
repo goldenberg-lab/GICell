@@ -1,6 +1,3 @@
-This repository contains the reproducible script needed to replicate the analysis found here. 
+This repository contains the scripts needed to reproduce the eosinophil cell counting analysis. Code requires the data to be set up in `GICell` `GIOrdinal` appropriately. 
 
-To replicate results, run:
-
-1. `process_Xy.py` to produce pixel-wise annotations using Gaussian blur. Saves output in `~output/di_img_point.pickle` as a dictionary.
-2. 
+Run the `0_pipeline.sh` to process the data, train the models, and carry out inference. 

@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils import data
-from funs_support import intax3, stopifnot, t2n
+from funs_support import intax3, t2n
 
 class CellCounterDataset(data.Dataset):
     def __init__(self,di,ids=None,transform=None,multiclass=False):
@@ -12,7 +12,7 @@ class CellCounterDataset(data.Dataset):
         if ids is None:
             self.ids = list(di.keys())
         else:
-            stopifnot(len(np.setdiff1d(ids, list(di.keys()))) == 0)
+            assert len(np.setdiff1d(ids, list(di.keys()))) == 0
             self.ids = ids
         self.transform = transform
 

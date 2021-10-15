@@ -47,7 +47,6 @@ dir_base = os.getcwd()
 dir_output = os.path.join(dir_base, '..', 'output')
 dir_figures = os.path.join(dir_output, 'figures')
 lst_dir = [dir_output, dir_figures]
-[stopifnot(z) for z in lst_dir]
 dir_checkpoint = os.path.join(dir_output, 'checkpoint')
 dir_multiclass = os.path.join(dir_checkpoint, 'multiclass')
 dir_aggregate = os.path.join(dir_checkpoint, 'aggregate')
@@ -69,10 +68,7 @@ for idt in ids_tissue:
         columns={'cell': 'n', 'index': 'cell'})
     checka = tot1 == tot2
     checkb = df2.merge(df1, 'left', 'cell').assign(iseq=lambda x: x.n_x == x.n_y).iseq.all()
-    if not (checka and checkb):
-        print('ID: %s\nTotal pixels: %i, total points: %i\n%s' %
-              (idt, tot1, tot2, df2.merge(df1, 'left', 'cell')))
-        stopifnot(False)
+    assert checka and checkb), print('ID: %s\nTotal pixels: %i, total points: %i\n%s' % (idt, tot1, tot2, df2.merge(df1, 'left', 'cell')))
 
 # Calculate eosinophilic ratio for each
 cn_inflam = ['neutrophil', 'plasma', 'lymphocyte']
