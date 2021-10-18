@@ -99,74 +99,112 @@ def phat2lbl(phat, thresh, n, connectivity):
     return yhat
 
 # Function to calculate global AUROC
-def global_auroc(Ytrue, Ypred):  # Ytrue, Ypred = Ybin_val.copy(), P_val.copy()
+def global_auroc(Ytrue, Ypred):  
+    # Ytrue, Ypred = bin_Yval.copy(), P_val.copy()
     check_YP_same(Ytrue, Ypred, ybin=True)
-    n1 = np.sum(Ytrue)
-    n0 = np.prod(Ytrue.shape) - n1
+    n1 = int(np.nansum(Ytrue))
+    n0 = int(np.nansum(1 - Ytrue)) - n1
     den = n0 * n1
-    num = sum(stats.rankdata(Ypred.flatten())[Ytrue.flatten() == 1]) - n1*(n1+1)/2
+    flat_pred = Ypred.flatten()
+    flat_y = Ytrue.flatten()
+    idx_keep = ~np.isnan(flat_y)
+    flat_y = flat_y[idx_keep]
+    flat_pred = flat_pred[idx_keep]
+    num = sum(stats.rankdata(flat_pred)[flat_y == 1]) - n1*(n1+1)/2
     auc = num / den
     return auc
 
 
 # Function to calculate the global precision/recall curve
 def global_auprc(Ytrue, Ypred, n_points=50):
+    # Ytrue=bin_Yval.copy();Ypred=Phat_init.copy();n_points=50
     check_YP_same(Ytrue, Ypred, ybin=True)
-    idx_Y = (Ytrue == 1)
-    thresh_seq = np.quantile(Ypred[idx_Y], np.linspace(0, 1, n_points)[1:-1])
+    flat_pred = Ypred.flatten()
+    flat_y = Ytrue.flatten()
+    idx_keep = ~np.isnan(flat_y)
+    flat_y = flat_y[idx_keep]
+    flat_pred = flat_pred[idx_keep]
+    idx_Y1 = (flat_y == 1)
+    thresh_seq = np.quantile(flat_pred[idx_Y1], np.linspace(0, 1, n_points)[1:-1])
     holder = np.zeros([n_points-2, 3])
     for i, thresh in enumerate(thresh_seq):
-        idx_thresh = Ypred > thresh
-        Yhat = np.where(idx_thresh, 1, 0)
+        idx_thresh = flat_pred > thresh
+        flat_yhat = np.where(idx_thresh, 1, 0)
         # Presicion & recall
-        prec = Ytrue[idx_thresh].mean()
-        recall = Yhat[idx_Y].mean()
-        holder[i] = [thresh, prec, recall]        
+        prec = flat_y[idx_thresh].mean()
+        recall = flat_yhat[idx_Y1].mean()
+        holder[i] = [thresh, prec, recall]
     df = pd.DataFrame(holder, columns=['thresh','prec','recall'])
     return df
 
 def check_YP_same(X1, X2, ybin=False):
     assert isinstance(X1, np.ndarray) & isinstance(X2, np.ndarray)
     assert X1.shape == X2.shape
-    assert (X1.min() >= 0 and X1.max() <= 1) and (X2.min() >= 0 and X2.max() <= 1)
+    x1_min, x1_max = np.nanmin(X1), np.nanmax(X1)
+    x2_min, x2_max = np.nanmin(X2), np.nanmax(X2)
+    assert (x1_min >= 0 and x1_max <= 1) and (x2_min >= 0 and x2_max <= 1)
     if ybin:
-        assert np.all( (X1 == 0) | (X1 == 1))
+        assert np.all(np.isin(np.unique(X1[~np.isnan(X1)]),[0,1])), 'Not all ybinary values are 0/1'
 
 # Calculate cross entropy between any identically sized labels and predicted probs
 def cross_entropy(Ytrue, Ypred):
+    # Ytrue=bin_Yval.copy();Ypred=P_val.copy()
     check_YP_same(Ytrue, Ypred)
+    flat_pred = Ypred.flatten()
+    flat_y = Ytrue.flatten()
+    idx_keep = ~np.isnan(flat_y)
+    flat_y = flat_y[idx_keep]
+    flat_pred = flat_pred[idx_keep]
     # negative cross-entropy
-    nce = -np.mean(Ytrue*np.log(Ypred) + (1-Ytrue)*np.log(1-Ypred))
+    nce = -np.mean(flat_y*np.log(flat_pred) + (1-flat_y)*np.log(1-flat_pred))
     return nce
 
-# Function to loop through data loader and gets labels or 
-def get_YP(dataloader, model, h, w, ret_Y=False, ret_P=False):
+# Function to loop through data loader and gets labels and images into single 
+def get_YP(dataloader, model, ret_Y=False, ret_P=False, ret_idx=False):
+    # dataloader=val_gen;ret_Y=True;ret_P=False;ret_idx=True;model=mdl
     """
-    dataloader: iterable that return (ids, lbls, images)
-    di:         a dictionary that has {id:['lbls']}
+    dataloader: iterable that return (ds, ids, lbls, images)
     """
-    assert isinstance(dataloader, torch.utils.data.dataloader.DataLoader)
+    assert isinstance(dataloader, torch.utils.data.dataloader.DataLoader), 'dataloader is not the expected torch class'
     assert ret_Y != ~ret_P
     assert ret_Y + ret_P == 1
-    # torch needs data formatted as n_batch * n_channel * height * width
-    # reverse to height * width
-    mat = np.zeros([h, w, len(dataloader)])
+    # (i) Loop over data loader to calculate the max pixels
+    n_batch = len(dataloader)
+    h_max, w_max = 0, 0
+    df_idx = pd.DataFrame(np.zeros([n_batch, 2]), columns = ['ds','fn'])
+    jj = 0
+    for ds, fn, lbl, img in dataloader:
+        assert img.shape[2:] == lbl.shape[2:], 'img and lbl shape do not align...'
+        h, w = img.shape[2:]
+        h_max = max(h, h_max)
+        w_max = max(w, w_max)
+        df_idx.loc[jj] = [ds[0], fn[0]]
+        jj += 1
+        
+    # (ii) Loop over and store either prediction or label
+    mat = np.zeros([n_batch, h_max, w_max])
     if model.training == True:
         model.eval()
 
     jj = 0
-    for idt, lbl, img in dataloader:
-        assert len(idt) == 1
+    for _, _, lbl, img in dataloader:
         if ret_P:
             with torch.no_grad():
-                X = t2n(model(img))
-            X = np.squeeze(X.transpose(2, 3, 1, 0))
+                X = np.squeeze(t2n(model(img)))
         if ret_Y:
-            X = np.squeeze(t2n(lbl).transpose(2, 3, 1, 0))
-        assert X.shape == (h, w)
-        mat[:,:,jj] = X
+            X = np.squeeze(t2n(lbl))
+        # Assign from top-left
+        h, w = X.shape
+        mat[jj][:h, :w] = X
+        mat[jj][:h, w:] = np.nan
+        mat[jj][h:, :w] = np.nan
+        mat[jj][h:, w:] = np.nan
         jj += 1
-    return mat
+
+    if ret_idx:
+        return df_idx, mat
+    else:
+        return mat
 
 
 # Performs BCA bootstrap on some function

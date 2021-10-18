@@ -110,17 +110,14 @@ def zip_files(lst, fold, zip_fn):
 
 # ---- CONVERT THE 3 HYPERPARAMETERS INTO HASH ---- #
 # NOTE: returns an int
-def hash_hp(df, method='hash_array'):
-    cn_hp = ['lr', 'p', 'batch']
-    assert hasattr(pd.util, method)
-    fun = getattr(pd.util, method)
-    assert isinstance(df, pd.DataFrame)
-    assert df.columns.isin(cn_hp).sum() == len(cn_hp)
+def hash_hp(df, cn):
+    # df=df_slice;cn=cn_hp
+    assert df.columns.isin(cn).sum() == len(cn)
     assert len(df) == 1
-    df = df[cn_hp].copy().reset_index(None,drop=True)
+    df = df[cn].copy().reset_index(None,drop=True)
     df = df.loc[0].reset_index().rename(columns={'index':'hp',0:'val'})
     hp_string = pd.Series([df.apply(lambda x: x[0] + '=' + str(x[1]), 1).str.cat(sep='_')])
-    code_hash = fun(hp_string)[0]
+    code_hash = pd.util.hash_pandas_object(hp_string).values[0]
     return code_hash
 
 # ---- FUNCTIONS TO READ/WRITE PICKLES ---- #

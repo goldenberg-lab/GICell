@@ -7,6 +7,7 @@ parser.add_argument('--check_model', dest='check_model', action='store_true', he
 parser.add_argument('--is_eosin', dest='is_eosin', action='store_true', help='Eosinophil cell only')
 parser.add_argument('--is_inflam', dest='is_inflam', action='store_true', help='Eosinophil + neutrophil + plasma + lymphocyte')
 parser.set_defaults(is_eosin=False, is_inflam=False)
+parser.add_argument('--ds_test', nargs='+', help='Folders that should be reserved for testing')
 parser.add_argument('--nepoch', type=int, default=110, help='Number of epochs')
 parser.add_argument('--batch', type=int, default=1, help='Batch size')
 parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
@@ -14,8 +15,10 @@ parser.add_argument('--p', type=int, default=8, help='Number of initial params f
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
 args = parser.parse_args()
 save_model, check_int, check_model = args.save_model, args.check_int, args.check_model
-is_eosin, is_inflam = args.is_eosin, args.is_inflam
+is_eosin, is_inflam, ds_test = args.is_eosin, args.is_inflam, args.ds_test
 nepoch, batch, lr, p, nfill = args.nepoch, args.batch, args.lr, args.p, args.nfill
+print('args = %s' % args)
+
 
 if save_model:
     print('!!! WARNING --- MODEL WILL BE SAVED !!!')
@@ -26,10 +29,11 @@ if check_model:
     print('---- Script will terminate after one epoch ----')
     nepoch = 1
 
-# # for debugging
-# save_model, check_int, check_model = True, True, True
-# is_eosin, is_inflam, nfill = False, True, 1
-# lr, p, nepoch, batch = 1e-3, 64, 1, 2
+# for debugging
+save_model, check_int, check_model = True, True, True
+is_eosin, is_inflam, nfill = False, True, 1
+ds_test='oscar dua 70608'.split(' ')
+lr, p, nepoch, batch = 1e-3, 16, 1, 2
 
 from cells import valid_cells, inflam_cells
 
@@ -96,56 +100,76 @@ for dir in lst_newdir:
 n_channels = 3
 pixel_max = 255
 
+# Tolerance for actual/expected
+tol_pct, tol_dcell = 0.02, 2
+
 ###########################
 ## --- (1) LOAD DATA --- ##
 
 # --- (i) Train/Val/Test IDs --- #
 df_tt = pd.read_csv(os.path.join(dir_output,'train_val_test.csv'))
-di_tt = df_tt.groupby('tt').apply(lambda x: x.idt_tissue.to_list()).loc[['train','val','test']].to_dict()
-idt_tissue = df_tt.idt_tissue.to_list()
-# Corresponding index
-di_tt_idx = {k: np.where(pd.Series(idt_tissue).isin(v))[0] for k,v in di_tt.items()}
+u_tt = list(df_tt[df_tt['tt'] != 'test']['tt'].unique())
+ds_trainval = list(df_tt[df_tt['tt'].isin(u_tt)]['ds'].unique())
+di_tt = pd.DataFrame({'tt':df_tt['tt'],'ds_fn':df_tt.apply(lambda x: x[['ds','fn']].to_list(),axis=1)})
+di_tt = di_tt.groupby('tt').apply(lambda x: x.ds_fn.to_list()).to_dict()
 
-# --- (ii) Load data --- #
+# --- (ii) Load training/validation data --- #
 # Images ['img'] and labels (gaussian blur) ['lbls']
-path_pickle = os.path.join(dir_output, 'annot_hsk.pickle')
-di_data = hickle.load(path_pickle)
-gc.collect()
-# Aggregate counts
-df_cells = pd.read_csv(os.path.join(dir_output,'df_cells.csv'))
-# Sum based on cell type
-df_cells = df_cells[['ds','idt_tissue']].assign(cell=df_cells[cells].sum(1).values)
+tmp_di = {}
+for ds in ds_trainval:
+    path_pickle = os.path.join(dir_output, 'annot_%s.pickle' % ds)
+    tmp_di[ds] = hickle.load(path_pickle)
+# Invert the key order from [ds][fn] to [set][fn]
+di_data = {}
+for tt in u_tt:
+    di_data[tt] = {}
+    for ds, fn in di_tt[tt]:
+        di_data[tt][fn] = {}
+        di_data[tt][fn][ds] = tmp_di[ds][fn]
+del tmp_di
 
-# --- (iii) Set labels to match cell type --- #
+# --- (iii) Aggregate cell counts --- #
+cn_idx = ['ds','fn']
+df_cells = pd.read_csv(os.path.join(dir_output,'df_cells.csv'))
+df_cells.rename(columns={'idt':'fn'}, inplace=True)
+# Sum based on cell type
+df_cells = df_cells[cn_idx+cells].assign(cell=df_cells[cells].sum(1).values)
+df_cells.drop(columns=cells, inplace=True)
+
+# --- (iv) Set labels to match cell type --- #
 idx_cell = np.where(pd.Series(valid_cells).isin(cells))[0]
 holder = []
-for kk, idt in enumerate(idt_tissue):
-    tmp = di_data[idt]['lbls'].copy()
-    tmp2 = np.atleast_3d(tmp[:, :, idx_cell].sum(2))
-    gt = int(df_cells.query('idt_tissue==@idt',engine='python').cell.values[0])
-    est = tmp2.sum() / fillfac
-    if gt > 0:
-        err_pct = 100*(gt / est - 1)
-        assert np.abs(err_pct) < 2
-    di_data[idt]['lbls'] = tmp2
-    holder.append(err_pct)
-    del tmp, tmp2, gt
-dat_err_pct = pd.DataFrame({'idt':idt_tissue, 'err':holder}).assign(err=lambda x: x.err.abs())
-dat_err_pct = dat_err_pct.sort_values('err',ascending=False).round(2).reset_index(None,True)
+for tt in di_data:
+    for fn in di_data[tt].keys():
+        for ds in di_data[tt][fn].keys():
+            tmp = di_data[tt][fn][ds]['lbls'].copy()
+            tmp = np.atleast_3d(tmp[:, :, idx_cell].sum(2))
+            gt = df_cells.query('fn == @fn')['cell'].values[0]
+            est = tmp.sum() / fillfac
+            if gt > 0:
+                err_pct = 100*np.abs(gt / est - 1)
+                err_dcell = np.abs(gt - est)
+                assert (err_pct < 100*tol_pct) or (err_dcell < tol_dcell)
+            di_data[tt][fn][ds]['lbls'] = tmp
+            tmp_err = pd.DataFrame({'ds':ds, 'fn':fn, 'pct':err_pct, 'dcell':err_dcell},index=[0])
+            holder.append(tmp_err)
+            del tmp, gt, est
+dat_err_pct = pd.concat(holder).sort_values('pct',ascending=False).round(2)
+dat_err_pct.reset_index(None,drop=True,inplace=True)
 print(dat_err_pct.head())
 
-# --- (iv) Check image/label size concordance --- #
-dat_imsize = pd.DataFrame([di_data[idt]['lbls'].shape[:2] + di_data[idt]['img'].shape[:2] for idt in idt_tissue])
-n_pixels = dat_imsize.iloc[0,0]
-assert np.all(dat_imsize == n_pixels)
-
 # --- (v) Get mean number of cells/pixels for intercept initialization --- #
-# Use only training data to initialize intercept
-mu_pixels = np.mean([di_data[z]['lbls'].mean() for z in di_data if z in di_tt['train']])
-mu_cells = df_cells[df_cells.idt_tissue.isin(di_tt['train'])].cell.mean()
-err = 100 * ((mu_pixels * n_pixels**2 / fillfac) / mu_cells - 1)
-print('Error: %.2f%%' % err)
-b0 = np.log(mu_pixels / (1 - mu_pixels))
+holder = []
+for fn in di_data['train'].keys():
+    for ds in di_data['train'][fn].keys():
+        tmp_lbls = di_data['train'][fn][ds]['lbls'].copy()
+        mu_cells = tmp_lbls.sum() / np.prod(tmp_lbls.shape[:2])
+        tmp_mu = pd.DataFrame({'ds':ds, 'fn':fn, 'mu':mu_cells},index=[0])
+        holder.append(tmp_mu)
+dat_mu_cells = pd.concat(holder).reset_index(None, drop=True)
+b0 = dat_mu_cells['mu'].mean()
+# Do logit transformation
+b0 = np.log(b0 / (1 - b0))
 
 
 ###################################
@@ -168,8 +192,7 @@ if n_cuda is not None:
         mdl = DataParallel(mdl)
 mdl.to(device)
 # Check CUDA status for model
-print('Are network parameters cuda?: %s' %
-      all([z.is_cuda for z in mdl.parameters()]))
+print('Are network parameters cuda?: %s' % all([z.is_cuda for z in mdl.parameters()]))
 
 # Binary loss
 criterion = torch.nn.BCEWithLogitsLoss()
@@ -178,27 +201,33 @@ optimizer = torch.optim.Adagrad(params=mdl.parameters(), lr=lr)
 
 if check_int:  # Check that intercept approximates cell count
     tnow = time()
-    mat = np.zeros([len(idt_tissue), 2])
     mdl.eval()
     enc_tens = img2tensor(device)
-    for ii, idt in enumerate(idt_tissue):
-        if (ii + 1) % 25 == 0:
-            print('ID-tissue %s (%i of %i)' % (idt, ii + 1, len(idt_tissue)))
-            print('run time = %.3f' % (time() - tnow))
-        tens = enc_tens([di_data[idt]['img'],di_data[idt]['lbls']])[0]
-        # First channel should be batch size
-        tens = torch.unsqueeze(tens, dim=0).float() / pixel_max
-        with torch.no_grad():
-            logits = t2n(mdl(tens))
-        ncl = logits.mean()
-        nc = sigmoid(logits).sum()
-        mat[ii] = [nc, ncl]
+    holder, ii = [], 0
+    for fn in di_data['train'].keys():
+        for ds in di_data['train'][fn].keys():
+            ii += 1
+            if ii % 25 == 0:
+                print('ID-tissue %s (%i)' % (fn, ii))
+            tmp_di = di_data['train'][fn][ds].copy()
+            tens = enc_tens([tmp_di['img'], tmp_di['lbls']])[0]
+            # First channel should be batch size
+            tens = torch.unsqueeze(tens, dim=0).float() / pixel_max
+            with torch.no_grad():
+                logits = t2n(mdl(tens))
+            ncl = logits.mean()
+            nc = sigmoid(logits).sum()
+            mu = nc / np.prod(tens.shape[2:])
+            tmp_pred = pd.DataFrame({'ds':ds, 'fn':fn, 'mu':mu, 'ncl':ncl}, index=[ii])
+            holder.append(tmp_pred)
     torch.cuda.empty_cache()
     print('Took %i seconds to pass through all images' % (time() - tnow))
-    emp_cells, emp_ncl = mat.mean(0)
-    print('Intercept: %.2f, empirical logits: %.2f' % (b0, emp_ncl))
-    print('fillfac*cells: %.2f, predicted cells: %.2f' % (mu_cells*fillfac, emp_cells))
-
+    dat_b0 = pd.concat(holder)
+    emp_cells, emp_ncl = dat_b0[['mu','ncl']].mean(0)
+    print('Intercept: %.3f, empirical logits: %.3f' % (b0, emp_ncl))
+    print('Pixels per cell: %.1f, sigmoid: %.1f' % (1/mu_cells, 1/emp_cells))
+# Clean out any temporary files
+gc.collect()
 
 ##############################
 ## --- (3) DATA LOADERS --- ##
@@ -208,36 +237,31 @@ print('--- Sample sizes ---')
 print({print('%s = %i' % (k,len(v))) for k, v in di_tt.items()})
 
 # Create datasetloader class
-train_params = {'batch_size': batch, 'shuffle': True}
-val_params = {'batch_size': 1, 'shuffle': False}
-eval_params = {'batch_size': 1,'shuffle': False}
+train_params = {'batch_size':batch, 'shuffle':True}
+val_params = {'batch_size':1, 'shuffle':False}
+eval_params = {'batch_size':1,'shuffle':False}
 
 multiclass = False
 
 # Training (random rotations and flips)
 train_transform = transforms.Compose([randomRotate(), randomFlip(), img2tensor(device)])
-train_data = CellCounterDataset(di=di_data, ids=di_tt['train'], transform=train_transform, multiclass=multiclass)
-train_gen = data.DataLoader(dataset=train_data,**train_params)
+train_data = CellCounterDataset(di=di_data['train'], transform=train_transform, multiclass=multiclass)
+train_gen = data.DataLoader(dataset=train_data, **train_params)
 
 # Validation
 val_transform = transforms.Compose([img2tensor(device)])
-val_data = CellCounterDataset(di=di_data, ids=di_tt['val'], transform=val_transform, multiclass=multiclass)
+val_data = CellCounterDataset(di=di_data['val'], transform=val_transform, multiclass=multiclass)
 val_gen = data.DataLoader(dataset=val_data,**val_params)
 
-# Eval (all sample)
-eval_data = CellCounterDataset(di=di_data, ids=di_tt['train'] + di_tt['val'],
-                               transform=val_transform, multiclass=multiclass)
-eval_gen = data.DataLoader(dataset=eval_data, **eval_params)
-
-
 # Iniatize Y
-Y_val = get_YP(val_gen, mdl, n_pixels, n_pixels, ret_Y=True, ret_P=False)
-Ybin_val = np.where(Y_val>0,1,0)
-gt1 = np.round(Y_val.sum(0).sum(0) / fillfac).astype(int)
-gt2 = df_cells.set_index('idt_tissue').loc[di_tt['val']]['cell'].values
-assert np.all(gt1 == gt2)
-Phat_init = sigmoid(get_YP(val_gen, mdl, n_pixels, n_pixels, ret_Y=False, ret_P=True))
-print('Initial AUC: %.1f%%' % (100*global_auroc(Ybin_val, Phat_init)))
+idx_Yval, Yval = get_YP(val_gen, mdl, ret_Y=True, ret_P=False, ret_idx=True)
+bin_Yval = np.where(np.isnan(Yval), np.nan, np.where(Yval > 0, 1, 0))
+gt1 = np.ceil(np.nansum(np.nansum(Yval,1),1) / fillfac).astype(int)
+gt2 = idx_Yval.merge(df_cells,'left')['cell']
+assert np.all(gt1 == gt2), 'Yval does not align with df_cells'
+Phat_init = sigmoid(get_YP(val_gen, mdl, ret_Y=False, ret_P=True))
+pwauc_init = 100*global_auroc(bin_Yval, Phat_init)
+print('Initial AUC (pixel-wise): %.1f%%' % pwauc_init)
 
 ##########################
 ## --- (4) TRAINING --- ##
@@ -253,7 +277,7 @@ for ee in range(nepoch):
     mdl.train()
     lst_ce, lst_pred_act, lst_ids = [], [], []
     ii = 0
-    for ids_batch, lbls_batch, imgs_batch in train_gen:
+    for ds_batch, ids_batch, lbls_batch, imgs_batch in train_gen:
         ii += 1
         ids_batch = list(ids_batch)
         nbatch = len(ids_batch)
@@ -261,14 +285,19 @@ for ee in range(nepoch):
         optimizer.zero_grad()
         logits = mdl(imgs_batch)
         assert logits.shape == lbls_batch.shape
-        loss = criterion(input=logits,target=lbls_batch)
+        # Flatten the values to allow for removal of nan-values
+        logits = logits.flatten()
+        lbls_batch = lbls_batch.flatten()
+        idx_keep = ~torch.isnan(lbls_batch)
+        logits = logits[idx_keep]
+        lbls_batch = lbls_batch[idx_keep]
+        loss = criterion(input=logits, target=lbls_batch)
         # --- Backward pass --- #
         loss.backward()
         # --- Gradient step --- #
         optimizer.step()
         # --- Performance --- #
         ii_loss = loss.item()
-        # assert np.abs(ii_loss - cross_entropy(np.squeeze(t2n(lbls_batch)), sigmoid(np.squeeze(t2n(logits))))) < 1e-8
         # Empty cache
         torch.cuda.empty_cache()
         del lbls_batch, imgs_batch
@@ -284,11 +313,11 @@ for ee in range(nepoch):
     # Cross-entropy, precision, recall
     mdl.eval()
     # Get the probability dist
-    P_val = sigmoid(get_YP(val_gen, mdl, n_pixels, n_pixels, ret_Y=False, ret_P=True))
+    P_val = sigmoid(get_YP(val_gen, mdl, ret_Y=False, ret_P=True))
     # Calculate cross entropy, AUROC, precision, and recall on validation
-    ce_val = cross_entropy(Y_val, P_val)
-    auc_val = global_auroc(Ybin_val, P_val)
-    pr_val = global_auprc(Ybin_val, P_val, n_points=27)
+    ce_val = cross_entropy(Yval, P_val)
+    auc_val = global_auroc(bin_Yval, P_val)
+    pr_val = global_auprc(bin_Yval, P_val, n_points=27)
     pr_val.insert(0,'epoch', ee+1)
     tmp_ce_auc = pd.DataFrame({'epoch':ee+1, 'auc':auc_val, 'ce':ce_val},index=[ee])
     # Save
@@ -306,15 +335,16 @@ for ee in range(nepoch):
 ## --- (5) EX POST --- ##
 
 # Merge dataframes
-dat_ce_auc = pd.concat(holder_ce_auc).reset_index(None, True)
-dat_pr = pd.concat(holder_pr).reset_index(None, True)
+dat_ce_auc = pd.concat(holder_ce_auc).reset_index(None, drop=True)
+dat_pr = pd.concat(holder_pr).reset_index(None, drop=True)
 
 # Hash all hyperparameters
+cn_hp = ['lr', 'p', 'batch']
 df_slice = pd.DataFrame({'lr':lr, 'p':p, 'batch':batch},index=[0])
-code_hash = hash_hp(df_slice, method='hash_array')
+code_hash = hash_hp(df_slice, cn_hp)
 
 # Pickle the dictionary
-di = {'hp':df_slice, 'ce_auc':dat_ce_auc, 'pr':dat_pr}
+di = {'code_hash':code_hash, 'hp':df_slice, 'ce_auc':dat_ce_auc, 'pr':dat_pr}
 
 if check_model:
     sys.exit('check_model exit')

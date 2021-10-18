@@ -43,22 +43,28 @@ cn_ord = ['idt','tissue','num','v2']
 cn_melt = ['ds','idt_tissue']+cn_ord
 
 df_cells = pd.read_csv(os.path.join(dir_output,'df_cells.csv'))
+df_cells.rename(columns={'idt':'fn'}, inplace=True)
 # Split idt_tissue into idt and tissue
-tmp = df_cells['idt_tissue'].str.split('\\_|\\-',3)
-tmp_tissue = tmp.apply(lambda x: str_subset(x,'^[A-Z][a-z]'), 1)[0].fillna('Rectum')
-tmp = df_cells['idt_tissue'].str.replace('|'.join(tmp_tissue.unique()),'',regex=True)
-tmp = tmp.str.replace('\\_{2}','_',regex=True)
-tmp = tmp.str.replace('\\_[0-9]{4}\\_[0-9]{2}\\_[0-9]{2}','',regex=True)
-tmp_idt = tmp.str.split('\\_',1,True)[0]
+tmp_tissue = df_cells['fn'].str.split('\\_|\\-',3)
+tmp_tissue = tmp_tissue.apply(lambda x: str_subset(x,'^[A-Z][a-z]'), 1)[0].fillna('Rectum')
+tmp_tissue = tmp_tissue.str.replace('[^A-Za-z]','',regex=True)
+u_tissue = tmp_tissue.unique()
+print('Unique tissues: %s' % u_tissue)
+tmp_idt = df_cells['fn'].str.replace('|'.join(u_tissue),'',regex=True)
+tmp_idt = tmp_idt.str.replace('\\_{2}','_',regex=True)
+tmp_idt = tmp_idt.str.replace('\\_[0-9]{4}\\_[0-9]{2}\\_[0-9]{2}','',regex=True)
 df_cells.insert(1,'tissue',tmp_tissue)
 df_cells.insert(1,'idt',tmp_idt)
+
 # Calculate inflam + eosin
 df_cells = df_cells.assign(inflam=df_cells[inflam_cells].sum(1))
 df_cells.rename(columns={'eosinophil':'eosin'}, inplace=True)
 df_cells.drop(columns=valid_cells, inplace=True, errors='ignore')
 # Assign whether the dataset is a test set
 df_cells = df_cells.assign(tt=lambda x: np.where(x.ds.isin(ds_test),'test','train'))
-assert not df_cells.groupby('ds').idt_tissue.apply(lambda x: x.duplicated().any()).any(), "Error! idt_tissue is not unique by ds"
+check1 = df_cells.groupby(['ds','fn']).size().max() == 1
+check2 = df_cells.groupby(['ds','idt','tissue']).size().max() == 1
+assert check1 & check2, "Error! idt_tissue is not unique by ds"
 
 
 #######################################
@@ -69,13 +75,14 @@ pct_test = np.mean(df_cells['tt'] == 'test')
 print('Proportions: training (%.1f%%), validation (%.1f%%), test (%.1f%%)' % ((1-pct_test)*(1-pval)*100, (1-pct_test)*pval*100, pct_test*100))
 
 # Stratify by eisonophil count
-idt_val = df_cells.groupby('ds').apply(lambda x: x.idt_tissue.iloc[stratify_continuous(x.idt_tissue,x.eosin,pval,seed=1)['test']])
-idt_val = idt_val.reset_index().drop(columns='level_1').assign(tt2='val')
-idt_val = idt_val[~idt_val['ds'].isin(ds_test)]
+fn_val = df_cells.groupby('ds').apply(lambda x: x.fn.iloc[stratify_continuous(x.fn,x.eosin,pval,seed=1)['test']])
+fn_val = fn_val.reset_index().drop(columns='level_1').assign(tt2='val')
+fn_val = fn_val[~fn_val['ds'].isin(ds_test)]
 # Merge and assign
-df_cells = df_cells.merge(idt_val,'left')
+df_cells = df_cells.merge(fn_val,'left')
 df_cells = df_cells.assign(tt=lambda x: np.where(x.tt2.isnull(),x.tt,x.tt2))
 df_cells.drop(columns='tt2', inplace=True)
+print(df_cells.groupby(['tt','ds']).size())
 # Check
 ttest_check = df_cells.query('tt != "test"').groupby(['ds','tt']).eosin.apply(lambda x: pd.DataFrame({'mu':x.mean(),'se':x.std(ddof=1),'n':len(x)},index=[0]))
 ttest_check = ttest_check.reset_index().drop(columns='level_2')
@@ -89,7 +96,7 @@ tscores = dmus / dens
 t_pval = 2*(1-stats.t(df=ns.sum(1)-1).cdf(tscores.abs()))
 assert t_pval.min() > 0.05, "Warning, t-test was rejected!"
 # Save for later
-cn_split = ['ds','idt_tissue','tt']
+cn_split = ['ds','fn','idt','tissue','tt']
 path_split = os.path.join(dir_output, 'train_val_test.csv')
 df_cells[cn_split].to_csv(path_split,index=False)
 
@@ -98,7 +105,7 @@ df_cells[cn_split].to_csv(path_split,index=False)
 ## --- (3) AVERAGE CELLS --- ##
 
 cn_gg = ['ds','tt','cell']
-long_cells = df_cells.melt(['idt_tissue','tissue']+cn_gg[:-1],['eosin','inflam'],'cell','n')
+long_cells = df_cells.melt(['idt','tissue']+cn_gg[:-1],['eosin','inflam'],'cell','n')
 long_cells['cell'] = long_cells['cell'].str.title()
 long_cells['n'] = long_cells['n'].astype(int)
 long_cells['tt'] = long_cells['tt'].map(di_tt)

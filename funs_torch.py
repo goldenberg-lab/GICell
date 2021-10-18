@@ -6,29 +6,49 @@ from torch.utils import data
 from funs_support import intax3, t2n
 
 class CellCounterDataset(data.Dataset):
-    def __init__(self,di,ids=None,transform=None,multiclass=False):
+    def __init__(self, di, ids=None, transform=None, multiclass=False):
         self.di = di
         self.multiclass = multiclass
-        if ids is None:
-            self.ids = list(di.keys())
-        else:
-            assert len(np.setdiff1d(ids, list(di.keys()))) == 0
-            self.ids = ids
         self.transform = transform
+        # Loop over structure {idt1:{ds1:[...], ds2:[...]}, idt2:...}
+        #   to create look-up table based on integer
+        #   Also calculate the max pixel size to force padding
+        self.h, self.w = 0, 0
+        self.lookup = {}
+        ii = 0
+        for idt in self.di.keys():
+            for ds in self.di[idt]:
+                self.lookup[ii] = {'idt':idt, 'ds':ds}
+                h, w, _ = self.di[idt][ds]['img'].shape
+                self.h = max(self.h, h)
+                self.w = max(self.w, w)
+                ii += 1
 
     def __len__(self):
-        return len(self.ids)
+        return len(self.lookup)
 
     def __getitem__(self,idx):
-        id = self.ids[idx]
-        if self.multiclass:
-            lbls = self.di[id]['lbls']
-        else:  # Intergrate out the third access
-            lbls = intax3(self.di[id]['lbls'])
-        imgs = self.di[id]['img'] / 255
+        idt = self.lookup[idx]['idt']
+        ds = self.lookup[idx]['ds']
+        lbls = self.di[idt][ds]['lbls'].copy()
+        if not self.multiclass:  # Intergrate out the third access
+            lbls = intax3(lbls)
+        imgs = self.di[idt][ds]['img'] / 255
         if self.transform:
             imgs, lbls = self.transform([imgs, lbls])
-        return id, lbls, imgs
+        # Put to h_max, w_max scale        
+        nc, himg, wimg = imgs.shape
+        nlbl = lbls.shape[0]
+        device = imgs.device
+        if (himg != self.h) or (wimg != self.h):
+            lbls2 = torch.zeros(nlbl, self.h, self.w, device=device) / 0
+            lbls2[:, :himg, :wimg] = lbls
+            imgs2 = torch.zeros(nc, self.h, self.w, device=device)
+            imgs2[:, :himg, :wimg] = imgs
+            del imgs, lbls
+            lbls, imgs = lbls2, imgs2
+
+        return ds, idt, lbls, imgs
 
 
 class img2tensor(object):

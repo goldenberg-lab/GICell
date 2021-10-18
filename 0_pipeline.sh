@@ -4,7 +4,7 @@ nfill=1  # nfill impacts cell x ratio
 s2=2  # Standard deviation of gaussian smoothing
 annotators="oscar dua"  # Which folders are inter-annotators
 pval=0.2  # What percent of the training data
-ds_test="oscar dua 70602"  # Which folders are for testing
+ds_test="oscar dua 70608"  # Which folders are for testing
 
 echo "--- CHECK CONDA ENVIRONMENT ---"
 source set_env.sh
@@ -46,9 +46,9 @@ echo "--- (4) TEST MODEL ---"
 #           ~/output/checkpoint/{cell}/HASH.pkl == {'hp', 'ce_auc', 'pr', 'mdl'*}
 #           *requires --save_model flag
 echo "Testing INFLAM"
-python -u 4_run_mdl.py --is_inflam --check_model
+python -u 4_run_mdl.py --is_inflam --check_model --ds_test $ds_test
 echo "Testing EOSIN"
-python -u 4_run_mdl.py --is_eosin  --check_model
+python -u 4_run_mdl.py --is_eosin  --check_model --ds_test $ds_test
 
 # echo "--- (5) RUN OVER HYPERPARAMETERS ---"
 # source pipeline_nohup.sh

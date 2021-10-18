@@ -83,8 +83,9 @@ for ii, rr in dat_pimages.iterrows():
     # (i) Load points
     path_points = os.path.join(dir_points, tt)
     df_ii = zip_points_parse(fn=points, dir=path_points, valid_cells=valid_cells)
-    df_ii = df_ii.assign(idt_tissue=idt_tissue, ds=tt)[cn_ord]
-    holder_df.append(df_ii.assign(ii=ii))
+    df_ii = df_ii.assign(idt=idt, idt_tissue=idt_tissue, ds=tt)
+    tmp_ii = df_ii.assign(ii=ii).drop(columns=['x','y'])
+    holder_df.append(tmp_ii)
 
     # (ii) Load images
     path_images = os.path.join(dir_images, images)
@@ -123,7 +124,7 @@ assert all([[di_data[tt][idt]['img'].shape[0] > 0 for idt in di_data[tt]] for tt
 ## --- (3) SAVE DATA --- ##
 
 # --- (i) Save the location information as pandas dataframe --- #
-df_cells = df_pts.pivot_table(index=['ds','idt_tissue'],columns='cell',aggfunc='size')
+df_cells = df_pts.pivot_table(index=['ds','idt'],columns='cell',aggfunc='size')
 df_cells = df_cells.fillna(0).astype(int).reset_index()
 df_cells.to_csv(os.path.join(dir_output,'df_cells.csv'),index=False)
 # Save the original location data
