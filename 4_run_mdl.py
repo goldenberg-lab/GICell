@@ -29,11 +29,11 @@ if check_model:
     print('---- Script will terminate after one epoch ----')
     nepoch = 1
 
-# for debugging
-save_model, check_int, check_model = True, True, True
-is_eosin, is_inflam, nfill = False, True, 1
-ds_test='oscar dua 70608'.split(' ')
-lr, p, nepoch, batch = 1e-3, 16, 1, 2
+# # for debugging
+# save_model, check_int, check_model = True, True, True
+# is_eosin, is_inflam, nfill = True, False, 1
+# ds_test='oscar dua 70608'.split(' ')
+# lr, p, nepoch, batch = 1e-3, 16, 1, 2
 
 from cells import valid_cells, inflam_cells
 
@@ -150,9 +150,9 @@ for tt in di_data:
                 err_pct = 100*np.abs(gt / est - 1)
                 err_dcell = np.abs(gt - est)
                 assert (err_pct < 100*tol_pct) or (err_dcell < tol_dcell)
-            di_data[tt][fn][ds]['lbls'] = tmp
-            tmp_err = pd.DataFrame({'ds':ds, 'fn':fn, 'pct':err_pct, 'dcell':err_dcell},index=[0])
-            holder.append(tmp_err)
+                tmp_err = pd.DataFrame({'ds':ds, 'fn':fn, 'pct':err_pct, 'dcell':err_dcell},index=[0])
+                holder.append(tmp_err)
+            di_data[tt][fn][ds]['lbls'] = tmp        
             del tmp, gt, est
 dat_err_pct = pd.concat(holder).sort_values('pct',ascending=False).round(2)
 dat_err_pct.reset_index(None,drop=True,inplace=True)

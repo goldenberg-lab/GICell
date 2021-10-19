@@ -12,7 +12,9 @@ from funs_torch import img2tensor, randomFlip, randomRotate, all_img_flips
 
 dir_base = find_dir_cell()
 dir_output = os.path.join(dir_base, 'output')
+makeifnot(dir_output)
 dir_figures = os.path.join(dir_output, 'figures')
+makeifnot(dir_figures)
 dir_test = os.path.join(dir_figures, 'test')
 makeifnot(dir_test)
 
