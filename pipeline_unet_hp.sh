@@ -12,13 +12,16 @@ source $path_conda
 source set_env.sh
 
 # Check CUDA
-python -u check_cuda.py
+python -u 1b_check_cuda.py
 
 # Loop over different learning rate/batch_size/architecture configurations
-nepoch=90
+nepoch=100
 lr_seq="0.002"
-bs_seq="6"
-p_seq="64"
+# "0.0005 0.001 0.002"
+bs_seq="8"
+# "4 6 8"
+p_seq="78"
+# "52 64 78"
 
 jj=0
 for lr in $lr_seq; do
@@ -28,10 +31,10 @@ for lr in $lr_seq; do
       echo "##### ITERATION: "$jj" #####"
       echo "learning rate: "$lr", batch-size: "$bs", # params: "$p
       echo "--- Cell type: INFLAMMATORY ---"
-      python -u run_mdl.py --is_inflam --nepoch $nepoch --batch $bs --lr $lr --p $p --save_model
-
+      python -u run_mdl.py --is_inflam --nepoch $nepoch --batch $bs --lr $lr --p $p --check_model
+      #  --save_model
       echo "--- Cell type: EOSINOPHIL ---"
-      python -u run_mdl.py --is_eosin --nepoch $nepoch --batch $bs --lr $lr --p $p --save_model
+      # python -u run_mdl.py --is_eosin --nepoch $nepoch --batch $bs --lr $lr --p $p --save_model
     done
   done
 done

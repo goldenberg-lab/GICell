@@ -28,6 +28,5 @@ log_file=$(date | awk '{gsub(/ /,"_")}1')
 log_file=$log_file".log"
 
 nohup ./pipeline_unet_hp.sh $dir_code $path_conda > $dir_nohup/$log_file 2>&1 &
-# nohup ./pipeline_best.sh $dir_code $path_conda > $dir_nohup/$log_file 2>&1 &
 
-echo "end of pipeline_nohup.sh"
+echo "~~~ end of 5_pipeline_nohup.sh ~~~"

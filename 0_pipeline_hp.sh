@@ -50,31 +50,8 @@ python -u 4_run_mdl.py --is_inflam --check_model --ds_test $ds_test
 echo "Testing EOSIN"
 python -u 4_run_mdl.py --is_eosin  --check_model --ds_test $ds_test
 
-# echo "--- (5) RUN OVER HYPERPARAMETERS ---"
-# source pipeline_nohup.sh
+echo "--- (5) RUN OVER HYPERPARAMETERS ---"
+source 5_pipeline_nohup.sh
+# output:   ~/
 
-# echo "--- (6) HP SEARCH ---"
-# # Call pipeline_best.sh on appropriate machine to get results
-# python -u explore_hp.py
-# # output:   ~/output/figures/gg_{metric}_val.png
-# #           ~/output/figures/dat_{pr/ce}_ce.csv
-
-
-
-# echo "--- (10) Find peak eosin region ---"
-# # Find regions of highest eosinophil density on full image
-# python -u find_peak_eosin.py --nfill 1 --hw 500 --stride 500 --hsk --cinci
-
-
-# echo "--- (7) Test set ---"
-# # Find test-set performance
-# python -u explore_test.py
-# # output:   ~/output/inf_stab.csv
-# #           ~/output/figures/{gg_inf_stab,gg_auroc_tt,gg_auprc,gg_scatter_unet,gg_thresh_n_{msr},gg_scatter_star,gg_perf_star}
-
-# echo "--- (8) Inter-annotator variability ---"
-# python -u explore_inter.py --annotators $annotators
-
-
-
-echo "--------  END OF pipeline_GI.sh ----------"
+echo "--------  END OF 0_pipeline_hp.sh ----------"
