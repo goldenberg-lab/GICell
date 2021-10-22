@@ -2,7 +2,6 @@
 
 nfill=1  # nfill impacts cell x ratio
 s2=2  # Standard deviation of gaussian smoothing
-annotators="oscar dua"  # Which folders are inter-annotators
 pval=0.2  # What percent of the training data
 ds_test="oscar dua 70608"  # Which folders are for testing
 

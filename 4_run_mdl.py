@@ -103,6 +103,7 @@ pixel_max = 255
 # Tolerance for actual/expected
 tol_pct, tol_dcell = 0.02, 2
 
+
 ###########################
 ## --- (1) LOAD DATA --- ##
 
@@ -339,8 +340,8 @@ dat_ce_auc = pd.concat(holder_ce_auc).reset_index(None, drop=True)
 dat_pr = pd.concat(holder_pr).reset_index(None, drop=True)
 
 # Hash all hyperparameters
-cn_hp = ['lr', 'p', 'batch']
-df_slice = pd.DataFrame({'lr':lr, 'p':p, 'batch':batch},index=[0])
+cn_hp = ['lr', 'p', 'batch', 'nepoch']
+df_slice = pd.DataFrame({'lr':lr, 'p':p, 'batch':batch, 'nepoch':nepoch},index=[0])
 code_hash = hash_hp(df_slice, cn_hp)
 
 # Pickle the dictionary

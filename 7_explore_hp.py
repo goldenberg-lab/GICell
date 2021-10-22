@@ -4,7 +4,7 @@ import os
 import pickle
 import pandas as pd
 import numpy as np
-import plotnine as p9
+import plotnine as pn
 from funs_support import find_dir_cell
 from funs_plotting import gg_save
 import gc
@@ -68,8 +68,26 @@ dat_pr.to_csv(os.path.join(dir_output, 'dat_hp_pr.csv'),index=False)
 ###############################
 ## --- (2) FIND BEST AUC --- ##
 
+# Best AUC by batch size
 best_auc = dat_ce.query('metric=="auc"').reset_index(None,True)
-print(best_auc.loc[best_auc.groupby('cell').value.idxmax()])
+best_auc_batch = best_auc.loc[best_auc.groupby(['cell','batch']).value.idxmax()]
+best_auc_batch = best_auc_batch.sort_values(['cell','value'],ascending=[True,False])
+best_auc_batch.reset_index(None, drop=True, inplace=True)
+print(best_auc_batch)
+
+# Find the most stable batch size, as batch norm most important
+se_auc = best_auc.groupby(['batch','lr','p']).value.std()
+se_auc = se_auc.reset_index().groupby('batch').value.mean().reset_index()
+batch_best = se_auc.query('value == value.min()')['batch'].values.min()
+hp_best = best_auc_batch.query('batch == @batch_best')
+hp_best = hp_best[list(df_hp.columns)+['epoch','cell']].reset_index(None,drop=True)
+hp_best.to_csv(os.path.join(dir_output, 'hp_best.csv'), index=False)
+
+tend = pd.to_datetime('2021-10-21 17:03')
+tstart = pd.to_datetime('2021-10-19 10:58')
+dhours = (tend-tstart).total_seconds()/3600
+n_experiment = best_auc.groupby(['cell','lr','p','batch']).size().shape[0]
+print('Total run time: %i hours, %.1f hours per experiment' % (dhours, dhours/n_experiment))
 
 
 ##############################
@@ -99,13 +117,13 @@ for metric in ['ce','auc']:
     tmp_gtit = 'metric = %s\nDashed lines show "best"\nBurn-in epochs=%i' % (metric,epoch_min)
     tmp_gtit += '\n best: ' + tmp_moment.assign(lbl=lambda x: x.cell+'='+x.best.round(2).astype(str)).lbl.str.cat(sep=', ')
     # Plot and save
-    tmp_gg = (p9.ggplot(tmp_df, p9.aes(x='epoch',y='idx',color='cell')) + 
-        p9.theme_bw() + p9.geom_line() + 
-        p9.ggtitle(tmp_gtit) + 
-        p9.geom_hline(p9.aes(yintercept='best',color='cell'),linetype='--',
+    tmp_gg = (pn.ggplot(tmp_df, pn.aes(x='epoch',y='idx',color='cell')) + 
+        pn.theme_bw() + pn.geom_line() + 
+        pn.ggtitle(tmp_gtit) + 
+        pn.geom_hline(pn.aes(yintercept='best',color='cell'),linetype='--',
                         data=tmp_vlines,inherit_aes=False) + 
-        p9.facet_grid('lr+p~batch',labeller=p9.label_both) + 
-        p9.labs(x='Epoch',y='Value (100==epoch 1)'))
+        pn.facet_grid('lr+p~batch',labeller=pn.label_both) + 
+        pn.labs(x='Epoch',y='Value (100==epoch 1)'))
     gg_save(tmp_fn, dir_figures, tmp_gg, 10, 10)
 
 

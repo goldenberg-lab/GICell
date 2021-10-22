@@ -3,15 +3,17 @@
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
+parser.add_argument('--ds_test', nargs='+', help='Folders that should be reserved for testing')
 parser.add_argument('--check_flips', dest='check_flips', action='store_true', help='Compare inference for different angles/rotations')
+
 args = parser.parse_args()
 nfill = args.nfill
 check_flips = args.check_flips
 print('args : %s' % args)
 
 # # For debugging
-# nfill = 1
-# check_flips = True
+# nfill, check_flips = 1, True
+# ds_test=['oscar', 'dua', '70608']
 
 import os
 import numpy as np
@@ -33,7 +35,6 @@ makeifnot(dir_inference)
 
 lst_dir = [dir_output, dir_figures]
 assert all([os.path.exists(z) for z in lst_dir])
-dir_best = os.path.join(dir_output, 'best')
 dir_checkpoint = os.path.join(dir_output, 'checkpoint')
 
 idx_eosin = np.where(pd.Series(valid_cells).isin(['eosinophil']))[0]
@@ -59,8 +60,6 @@ print('nfill: %i, fillfac: x%i' % (nfill, fillfac))
 
 ############################
 ## --- (1) LOAD MODEL --- ##
-
-cn_hp = ['lr', 'p', 'batch']
 
 # Load in the "best" models for each typefn_best = pd.Series(os.listdir(dir_best))
 fn_best = pd.Series(os.listdir(dir_best))
@@ -517,3 +516,4 @@ gg_perf_star = (pn.ggplot(res_cell_perf,pn.aes(x='msr',y='value',color='cell')) 
     pn.facet_wrap('~tt',nrow=2))
 gg_save('gg_perf_star.png', dir_figures, gg_perf_star, 6, 5)
 
+print('~~~ End of 11_explore_test.py ~~~')
