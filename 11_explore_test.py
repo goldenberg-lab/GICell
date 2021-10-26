@@ -1,27 +1,29 @@
 # Script to analyze performance of model on test set with both pixel-wise and clustered performance
 
 import argparse
+from matplotlib.pyplot import fill
+
+from pandas.io.sql import DatabaseError
 parser = argparse.ArgumentParser()
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
-parser.add_argument('--ds_test', nargs='+', help='Folders that should be reserved for testing')
 parser.add_argument('--check_flips', dest='check_flips', action='store_true', help='Compare inference for different angles/rotations')
 
 args = parser.parse_args()
 nfill = args.nfill
 check_flips = args.check_flips
+ds_test = args.ds_test
 print('args : %s' % args)
 
 # # For debugging
 # nfill, check_flips = 1, True
-# ds_test=['oscar', 'dua', '70608']
 
 import os
 import numpy as np
 import pandas as pd
 import hickle
 from time import time
-from funs_support import find_dir_cell, makeifnot, read_pickle, no_diff, t2n, sigmoid, makeifnot
-from cells import valid_cells, inflam_cells
+from funs_support import find_dir_cell, makeifnot, read_pickle, t2n, sigmoid, makeifnot
+from cells import valid_cells, inflam_cells, di_ds, di_tt
 from funs_stats import global_auroc, global_auprc, rho, phat2lbl, lbl_freq
 import plotnine as pn
 from scipy import stats
@@ -61,16 +63,21 @@ print('nfill: %i, fillfac: x%i' % (nfill, fillfac))
 ############################
 ## --- (1) LOAD MODEL --- ##
 
-# Load in the "best" models for each typefn_best = pd.Series(os.listdir(dir_best))
-fn_best = pd.Series(os.listdir(dir_best))
-fn_best = fn_best.str.split('\\_',1,True)
-fn_best.rename(columns={0:'cell',1:'fn'},inplace=True)
-di_fn = dict(zip(fn_best.cell,fn_best.fn))
-di_fn = {k:os.path.join(dir_best,k+'_'+v) for k,v in di_fn.items()}
-assert all([os.path.exists(v) for v in di_fn.values()])
-di_mdl = {k1: {k2:v2 for k2, v2 in read_pickle(v1).items() if k2 in ['mdl','hp']} for k1, v1 in di_fn.items()}
-dat_hp = pd.concat([v['hp'].assign(cell=k) for k,v in di_mdl.items()])
-
+# Load in the "best" models for each cell type
+cells = os.listdir(dir_checkpoint)
+di_mdl = dict.fromkeys(cells)
+for cell in cells:
+    dir_cell = os.path.join(dir_checkpoint, cell)
+    fn_cell = pd.Series(os.listdir(dir_cell))
+    fn_cell = fn_cell[fn_cell.str.contains('best_%s.pkl'%cell)]
+    assert len(fn_cell) == 1, 'Could not detect single best model'
+    fn_best = fn_cell.to_list()[0]
+    path_best = os.path.join(dir_cell, fn_best)
+    assert os.path.exists(path_best)
+    di_mdl[cell] = read_pickle(path_best)
+# Extract the hyperparameters
+dat_hp = [v['hp'].assign(cell=k) for k, v in di_mdl.items()]
+dat_hp = pd.concat(dat_hp).reset_index(None,drop=True)
 print('---- BEST HYPERPARAMETERS ----')
 print(dat_hp)
 # Drop the hp and keep only model
@@ -82,46 +89,76 @@ di_mdl = {k: v.float() for k, v in di_mdl.items()}
 # Models should be eval mode
 assert all([not k.training for k in di_mdl.values()])
 
-di_tt = {'train':'Train','val':'Val','test':'Test','oos':'Cinci'}
-
-# Link cell order to model
-cells = list(di_mdl.keys())
-n_cells = len(cells)
 
 ###########################
 ## --- (2) LOAD DATA --- ##
 
-datasets = ['hsk', 'cinci']
-# (i) Images + labels, di_data[ds][idt_tissue]
-di_data = {ds: hickle.load(os.path.join(dir_output, 'annot_'+ds+'.pickle')) for ds in datasets}
-
-# (ii) Aggregate cell counts
+# (i) Aggregate cell counts
 df_cells = pd.read_csv(os.path.join(dir_output, 'df_cells.csv'))
-
-# Check alignment
-assert df_cells.groupby('ds').apply(lambda x: no_diff(x.idt_tissue,list(di_data[x.ds.iloc[0]]))).all()
-
+u_ds = list(df_cells['ds'].unique())
 # Keep only eosin's + inflam
-df_cells = df_cells[['ds','idt_tissue','eosinophil']].assign(inflam=df_cells[inflam_cells].sum(1)).rename(columns={'eosinophil':'eosin'})
-print(df_cells.assign(sparse=lambda x: x.eosin == 0).groupby('ds').sparse.mean())
-df_cells_long = df_cells.melt(['ds','idt_tissue'],None,'cell','act')
+df_cells = df_cells[['ds','idt','eosinophil']].assign(inflam=df_cells[inflam_cells].sum(1)).rename(columns={'eosinophil':'eosin'})
+df_cells_long = df_cells.melt(['ds','idt'],None,'cell','act')
+pct_sparse = df_cells_long.groupby(['cell','ds']).apply(lambda x: pd.Series({'sparse':np.mean(x.act == 0)}))
+pct_sparse = pct_sparse.sort_values(['cell','sparse']).reset_index()
+print(pct_sparse.reset_index().round(3))
 
-# (iii) Train/val/test
-tmp1 = pd.read_csv(os.path.join(dir_output, 'train_val_test.csv'))
-tmp1.insert(0, 'ds', 'hsk')
-tmp2 = pd.DataFrame({'ds':'cinci','tt':'oos', 'idt_tissue':list(di_data['cinci'])})
-tmp2 = df_cells.merge(tmp2,'right').assign(is_zero=lambda x: x.eosin == 0)
-tmp2.drop(columns = cells, inplace=True)
-df_tt = pd.concat(objs=[tmp1, tmp2], axis=0).reset_index(None, drop=True)
-print(df_tt.groupby('ds').is_zero.mean())
-df_tt_idt = df_tt[['idt_tissue','tt']].copy()
+# (ii) Train/val/test
+df_sets = pd.read_csv(os.path.join(dir_output, 'train_val_test.csv'),usecols=['ds','fn','idt','tt'])
+u_tt = list(df_sets['tt'].unique())
+
+# (iii) Load the test data
+di_data = dict.fromkeys(u_ds)
+for ds in u_ds:
+    path_ds = os.path.join(dir_output, 'annot_%s.pickle'%ds)
+    di_data[ds] = hickle.load(path_ds)
+
+# Check that df_cells and di_data lines up
+idt_di_data = pd.concat([pd.DataFrame({'ds':k,'idt':list(v.keys())}) for k,v in di_data.items()]).reset_index(None,drop=True)
+check1 = idt_di_data.assign(val1=1).merge(df_cells[['idt','ds']].assign(val2=1),'left')
+assert check1['val2'].notnull().all(), 'Not all idts line up'
+
+# (iv) Re-order data dictionary in terms of train/val/test
+di_tt = dict.fromkeys(u_tt)
+for tt in u_tt:
+    tmp_ds = df_sets[df_sets['tt'] == tt]['ds'].unique()
+    di_tt[tt] = dict.fromkeys(tmp_ds)
+    for ds in tmp_ds:
+        print('tt=%s, ds=%s' % (tt, ds))
+        tmp_sets = df_sets.query('tt==@tt & ds==@ds')
+        tmp_di = dict(zip(tmp_sets['fn'], tmp_sets['idt']))
+        assert len(np.setdiff1d(list(tmp_di), list(di_data[ds])))==0, 'fn does not line up'
+        di_tt[tt][ds] = dict.fromkeys(tmp_di.values())
+        for fn in tmp_di:
+            di_tt[tt][ds][tmp_di[fn]] = di_data[ds][fn]
+
 
 #######################################
-## --- (3) INFERENCE STABILITY --- ##
+## --- (3) PIXELWISE PERFORMANCE --- ##
 
-if check_flips:
-    stime = time()
-    holder = []
+# if check_flips:
+stime = time()
+holder = []
+for tt in di_tt:
+    for ds in di_tt[tt]:
+        print('tt=%s, ds=%s' % (tt, ds))
+        tmp_idt = list(di_tt[tt][ds])
+        n_idt = len(tmp_idt)
+        for ii, idt in enumerate(tmp_idt):
+            # print('Patient %i of %i' % (ii+1, n_idt))
+            img, lbls = di_tt[tt][ds][idt].values()
+            # Calculate the different cell labels
+            lbl_eosin = lbls[:,:,idx_eosin]
+            lbl_inflam = lbls[:,:,idx_inflam]
+            n_eosin1 = int(lbl_eosin.sum() / fillfac)
+            n_inflam1 = int(lbl_inflam.sum() / fillfac)
+            fn = df_sets.query('ds==@ds & idt==@idt')['fn'].values[0]
+            n_eosin2, n_inflam2 = df_cells.query('ds==@ds & idt==@fn')[['eosin','inflam']].values.flat
+            if np.abs(n_eosin1 - n_eosin2) > 1:
+                print(n_eosin1, n_eosin2)
+                assert False                
+
+
     for ii , rr in df_tt.iterrows():
         ds, idt_tissue, tt = rr['ds'], rr['idt_tissue'], rr['tt']
         print('Row %i of %i' % (ii+1, len(df_tt)))
