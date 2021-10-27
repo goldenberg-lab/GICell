@@ -1,9 +1,6 @@
 # Script to analyze performance of model on test set with both pixel-wise and clustered performance
 
 import argparse
-from matplotlib.pyplot import fill
-
-from pandas.io.sql import DatabaseError
 parser = argparse.ArgumentParser()
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
 parser.add_argument('--check_flips', dest='check_flips', action='store_true', help='Compare inference for different angles/rotations')
@@ -152,6 +149,10 @@ for tt in di_tt:
             lbl_inflam = lbls[:,:,idx_inflam]
             n_eosin1 = int(lbl_eosin.sum() / fillfac)
             n_inflam1 = int(lbl_inflam.sum() / fillfac)
+
+            qq = df_sets.query('ds==@ds').drop(columns=['ds','tt'])
+            qq.apply(lambda x: x.duplicated().any())
+
             fn = df_sets.query('ds==@ds & idt==@idt')['fn'].values[0]
             n_eosin2, n_inflam2 = df_cells.query('ds==@ds & idt==@fn')[['eosin','inflam']].values.flat
             if np.abs(n_eosin1 - n_eosin2) > 1:

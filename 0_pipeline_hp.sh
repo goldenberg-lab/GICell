@@ -51,6 +51,6 @@ python -u 4_run_mdl.py --is_eosin  --check_model --ds_test $ds_test
 
 echo "--- (5) RUN OVER HYPERPARAMETERS ---"
 source 5_pipeline_nohup.sh
-# output:   ~/
+# output:   ~/output/checkpoint/{hash.pkl}
 
 echo "--------  END OF 0_pipeline_hp.sh ----------"

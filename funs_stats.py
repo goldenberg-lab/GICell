@@ -171,7 +171,7 @@ def get_YP(dataloader, model, ret_Y=False, ret_P=False, ret_idx=False):
     # (i) Loop over data loader to calculate the max pixels
     n_batch = len(dataloader)
     h_max, w_max = 0, 0
-    df_idx = pd.DataFrame(np.zeros([n_batch, 2]), columns = ['ds','fn'])
+    df_idx = pd.DataFrame(np.zeros([n_batch, 2]), columns = ['ds','idt'])
     jj = 0
     for ds, fn, lbl, img in dataloader:
         assert img.shape[2:] == lbl.shape[2:], 'img and lbl shape do not align...'

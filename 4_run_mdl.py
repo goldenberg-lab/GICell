@@ -30,7 +30,7 @@ if check_model:
     nepoch = 1
 
 # # for debugging
-# save_model, check_int, check_model = True, True, True
+# save_model, check_int, check_model = False, True, True
 # is_eosin, is_inflam, nfill = True, False, 1
 # ds_test='oscar dua 70608'.split(' ')
 # lr, p, nepoch, batch = 1e-3, 16, 1, 2
@@ -111,8 +111,8 @@ tol_pct, tol_dcell = 0.02, 2
 df_tt = pd.read_csv(os.path.join(dir_output,'train_val_test.csv'))
 u_tt = list(df_tt[df_tt['tt'] != 'test']['tt'].unique())
 ds_trainval = list(df_tt[df_tt['tt'].isin(u_tt)]['ds'].unique())
-di_tt = pd.DataFrame({'tt':df_tt['tt'],'ds_fn':df_tt.apply(lambda x: x[['ds','fn']].to_list(),axis=1)})
-di_tt = di_tt.groupby('tt').apply(lambda x: x.ds_fn.to_list()).to_dict()
+di_tt = pd.DataFrame({'tt':df_tt['tt'],'ds_idt':df_tt.apply(lambda x: x[['ds','idt']].to_list(),axis=1)})
+di_tt = di_tt.groupby('tt').apply(lambda x: x.ds_idt.to_list()).to_dict()
 
 # --- (ii) Load training/validation data --- #
 # Images ['img'] and labels (gaussian blur) ['lbls']
@@ -120,19 +120,19 @@ tmp_di = {}
 for ds in ds_trainval:
     path_pickle = os.path.join(dir_output, 'annot_%s.pickle' % ds)
     tmp_di[ds] = hickle.load(path_pickle)
-# Invert the key order from [ds][fn] to [set][fn]
+# Invert the key order from [ds][idt] to [set][idt]
 di_data = {}
 for tt in u_tt:
     di_data[tt] = {}
-    for ds, fn in di_tt[tt]:
-        di_data[tt][fn] = {}
-        di_data[tt][fn][ds] = tmp_di[ds][fn]
+    for ds, idt in di_tt[tt]:
+        di_data[tt][idt] = {}
+        di_data[tt][idt][ds] = tmp_di[ds][idt]
 del tmp_di
 
 # --- (iii) Aggregate cell counts --- #
-cn_idx = ['ds','fn']
+cn_idx = ['ds','idt']
 df_cells = pd.read_csv(os.path.join(dir_output,'df_cells.csv'))
-df_cells.rename(columns={'idt':'fn'}, inplace=True)
+df_cells.drop(columns=['h','w'], inplace=True)
 # Sum based on cell type
 df_cells = df_cells[cn_idx+cells].assign(cell=df_cells[cells].sum(1).values)
 df_cells.drop(columns=cells, inplace=True)
@@ -141,19 +141,19 @@ df_cells.drop(columns=cells, inplace=True)
 idx_cell = np.where(pd.Series(valid_cells).isin(cells))[0]
 holder = []
 for tt in di_data:
-    for fn in di_data[tt].keys():
-        for ds in di_data[tt][fn].keys():
-            tmp = di_data[tt][fn][ds]['lbls'].copy()
+    for idt in di_data[tt].keys():
+        for ds in di_data[tt][idt].keys():
+            tmp = di_data[tt][idt][ds]['lbls'].copy()
             tmp = np.atleast_3d(tmp[:, :, idx_cell].sum(2))
-            gt = df_cells.query('fn == @fn')['cell'].values[0]
+            gt = df_cells.query('idt == @idt')['cell'].values[0]
             est = tmp.sum() / fillfac
             if gt > 0:
                 err_pct = 100*np.abs(gt / est - 1)
                 err_dcell = np.abs(gt - est)
                 assert (err_pct < 100*tol_pct) or (err_dcell < tol_dcell)
-                tmp_err = pd.DataFrame({'ds':ds, 'fn':fn, 'pct':err_pct, 'dcell':err_dcell},index=[0])
+                tmp_err = pd.DataFrame({'ds':ds, 'idt':idt, 'pct':err_pct, 'dcell':err_dcell},index=[0])
                 holder.append(tmp_err)
-            di_data[tt][fn][ds]['lbls'] = tmp        
+            di_data[tt][idt][ds]['lbls'] = tmp        
             del tmp, gt, est
 dat_err_pct = pd.concat(holder).sort_values('pct',ascending=False).round(2)
 dat_err_pct.reset_index(None,drop=True,inplace=True)
@@ -161,11 +161,11 @@ print(dat_err_pct.head())
 
 # --- (v) Get mean number of cells/pixels for intercept initialization --- #
 holder = []
-for fn in di_data['train'].keys():
-    for ds in di_data['train'][fn].keys():
-        tmp_lbls = di_data['train'][fn][ds]['lbls'].copy()
+for idt in di_data['train'].keys():
+    for ds in di_data['train'][idt].keys():
+        tmp_lbls = di_data['train'][idt][ds]['lbls'].copy()
         mu_cells = tmp_lbls.sum() / np.prod(tmp_lbls.shape[:2])
-        tmp_mu = pd.DataFrame({'ds':ds, 'fn':fn, 'mu':mu_cells},index=[0])
+        tmp_mu = pd.DataFrame({'ds':ds, 'idt':idt, 'mu':mu_cells},index=[0])
         holder.append(tmp_mu)
 dat_mu_cells = pd.concat(holder).reset_index(None, drop=True)
 b0 = dat_mu_cells['mu'].mean()
@@ -205,12 +205,12 @@ if check_int:  # Check that intercept approximates cell count
     mdl.eval()
     enc_tens = img2tensor(device)
     holder, ii = [], 0
-    for fn in di_data['train'].keys():
-        for ds in di_data['train'][fn].keys():
+    for idt in di_data['train'].keys():
+        for ds in di_data['train'][idt].keys():
             ii += 1
             if ii % 25 == 0:
-                print('ID-tissue %s (%i)' % (fn, ii))
-            tmp_di = di_data['train'][fn][ds].copy()
+                print('ID-tissue %s (%i)' % (idt, ii))
+            tmp_di = di_data['train'][idt][ds].copy()
             tens = enc_tens([tmp_di['img'], tmp_di['lbls']])[0]
             # First channel should be batch size
             tens = torch.unsqueeze(tens, dim=0).float() / pixel_max
@@ -219,7 +219,7 @@ if check_int:  # Check that intercept approximates cell count
             ncl = logits.mean()
             nc = sigmoid(logits).sum()
             mu = nc / np.prod(tens.shape[2:])
-            tmp_pred = pd.DataFrame({'ds':ds, 'fn':fn, 'mu':mu, 'ncl':ncl}, index=[ii])
+            tmp_pred = pd.DataFrame({'ds':ds, 'idt':idt, 'mu':mu, 'ncl':ncl}, index=[ii])
             holder.append(tmp_pred)
     torch.cuda.empty_cache()
     print('Took %i seconds to pass through all images' % (time() - tnow))
@@ -263,6 +263,7 @@ assert np.all(gt1 == gt2), 'Yval does not align with df_cells'
 Phat_init = sigmoid(get_YP(val_gen, mdl, ret_Y=False, ret_P=True))
 pwauc_init = 100*global_auroc(bin_Yval, Phat_init)
 print('Initial AUC (pixel-wise): %.1f%%' % pwauc_init)
+
 
 ##########################
 ## --- (4) TRAINING --- ##

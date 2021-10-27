@@ -14,7 +14,10 @@ echo "--- (11) EXPLORE TEST SET ---"
 python -u 11_explore_test.py --nfill $nfill --check_flips
 #       ~/output/
 
-# echo "--- (12) FIND PEAK EOSIN ---"
+
+# echo "--- (12) EXPLORE INTER-ANNOTATOR ---"
+
+# echo "--- (13) FIND PEAK EOSIN ---"
 
 
 
