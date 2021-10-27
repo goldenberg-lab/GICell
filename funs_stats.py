@@ -100,18 +100,22 @@ def phat2lbl(phat, thresh, n, connectivity):
 
 # Function to calculate global AUROC
 def global_auroc(Ytrue, Ypred):  
-    # Ytrue, Ypred = bin_Yval.copy(), P_val.copy()
+    # Ytrue, Ypred = holder_Y[k,:,:,:], holder_sigmoid[k,:,:,:]
     check_YP_same(Ytrue, Ypred, ybin=True)
     n1 = int(np.nansum(Ytrue))
-    n0 = int(np.nansum(1 - Ytrue)) - n1
-    den = n0 * n1
-    flat_pred = Ypred.flatten()
-    flat_y = Ytrue.flatten()
-    idx_keep = ~np.isnan(flat_y)
-    flat_y = flat_y[idx_keep]
-    flat_pred = flat_pred[idx_keep]
-    num = sum(stats.rankdata(flat_pred)[flat_y == 1]) - n1*(n1+1)/2
-    auc = num / den
+    n0 = int(np.nansum(1 - Ytrue))
+    if (n1 == 0) | (n0 == 0):
+        auc = np.nan
+    else:
+        den = n0 * n1
+        flat_pred = Ypred.flatten()
+        flat_y = Ytrue.flatten()
+        idx_keep = ~np.isnan(flat_y)
+        flat_y = flat_y[idx_keep]
+        flat_pred = flat_pred[idx_keep]
+        num = sum(stats.rankdata(flat_pred)[flat_y == 1]) - n1*(n1+1)/2
+        auc = num / den
+        assert (auc >= 0) & (auc <= 1)
     return auc
 
 

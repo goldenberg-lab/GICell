@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils import data
-from funs_support import intax3, t2n
+from funs_support import intax3, t2n, vprint
 
 class CellCounterDataset(data.Dataset):
     def __init__(self, di, ids=None, transform=None, multiclass=False):
@@ -103,7 +103,8 @@ class randomRotate(object):
         return [imgs, lbls]
 
 class randomFlip(object):
-    def __init__(self, fix_k=False, k=0):
+    def __init__(self, fix_k=False, k=0, verbose=False):
+        self.verbose = verbose
         self.fix_k = fix_k
         self.k = k
 
@@ -112,7 +113,7 @@ class randomFlip(object):
             k = self.k
         else:
             k = np.random.randint(3)  # flip: 0 (none), 1 (left-right), 2 (up-down)
-        # print('Flip: %i' % k)
+        vprint('Flip: %i' % k, self.verbose)
         if k == 0:
             return imgs_lbls
         imgs, lbls = imgs_lbls[0], imgs_lbls[1]
@@ -128,7 +129,8 @@ class randomFlip(object):
 #       before reverse_flips can be called
 
 class all_img_flips():
-    def __init__(self, img_lbl, enc_tens=None, tol=1e-4, is_double=False):
+    def __init__(self, img_lbl, enc_tens=None, tol=1e-4, is_double=False, verbose=False):
+        self.verbose = verbose
         assert len(img_lbl) == 2 and isinstance(img_lbl, list)
         self.img_lbl = img_lbl.copy()
         self.img = img_lbl[0].copy()
@@ -153,7 +155,7 @@ class all_img_flips():
         for k_rotate in self.kseq_rotate:
             enc_rotate = randomRotate(fix_k=True,k=k_rotate)
             for k_flip in self.kseq_flip:
-                print('rotate=%i, flip=%i' % (k_rotate, k_flip))
+                vprint('rotate=%i, flip=%i' % (k_rotate, k_flip), self.verbose)
                 enc_flip = randomFlip(fix_k=True, k=k_flip)
                 rfimg, rflbl = enc_flip(enc_rotate(self.img_lbl))
                 assert self.img_lbl[0].sum() - rfimg.sum() == 0
