@@ -1,6 +1,13 @@
 # Script to analyze performance of model on test set with both pixel-wise and clustered performance
 
 import argparse
+
+from pandas._config.config import reset_option
+from plotnine.facets.facet_grid import facet_grid
+from plotnine.labels import ggtitle
+from plotnine.scales.scale_xy import scale_x_log10, scale_y_continuous, scale_y_log10
+from plotnine.themes.elements import element_blank
+from plotnine.themes.themeable import axis_title_x
 parser = argparse.ArgumentParser()
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
 args = parser.parse_args()
@@ -21,6 +28,7 @@ from funs_support import find_dir_cell, makeifnot, read_pickle, t2n, sigmoid, ma
 from cells import valid_cells, inflam_cells, di_ds, di_tt
 from funs_stats import global_auroc, global_auprc, rho, phat2lbl, lbl_freq
 import plotnine as pn
+from mizani.formatters import percent_format
 from scipy import stats
 from sklearn.metrics import r2_score
 
@@ -322,41 +330,32 @@ gg_save('gg_auprc.png', dir_figures, gg_auprc, 11, 5.5)
 ########################################
 ## --- (5) PROBABILITY CLUSTERING --- ##
 
-# ONLY VALIDATION SET SHOULD BE USED
-# NP.WHERE(IS.NAN(),NAN, ...)
-
 cn_msr = ['r2','rho']
+di_msr = {'r2':'R-Squared','rho':"Pearson's Rho"}
 conn_seq = [1, 2]
 
 nquant = 20
-idt_train = df_sets.query('tt=="train"')['idt']
 idt_val = df_sets.query('tt=="val"')['idt']
-idx_train = idt_train.index.values
 idx_val = idt_val.index.values
-assert len(np.intersect1d(idx_train, idx_val)) == 0, 'Overlap detected!'
+n_val = len(idx_val)
 # Loop over
 holder = []
 for jj, cell in enumerate(cells):
-    phat_train = sigmoid(holder_logits[idx_train, jj, :, :])
     phat_val = sigmoid(holder_logits[idx_val, jj, :, :])
-    ntrain, nrest = len(phat_train), len(phat_val)
-    ybin_train = holder_lbls[idx_train, jj, :, :]
-    thresh_train = np.quantile(phat_train[ybin_train==1], np.linspace(0, 1, nquant)[1:-1])
-    for kk, thresh in enumerate(thresh_train):
+    ybin_val = holder_lbls[idx_val, jj, :, :]
+    thresh_val = np.quantile(phat_val[ybin_val==1], np.linspace(0, 1, nquant)[1:-1])
+    for kk, thresh in enumerate(thresh_val):
         print('~~~~ cell = %s, thresh %i of %i ~~~~' % (cell, kk+1, nquant))
-        yhat_train = np.where(phat_train >= thresh, 1, 0)
-        yhat_rest = np.where(phat_val >= thresh, 1, 0)
+        # Note that missing values are set to zero which is fine for this case
+        yhat_val = np.where(phat_val >= thresh, 1, 0)
         for conn in conn_seq:
-            tmp_train = pd.concat([lbl_freq(yhat_train[i], conn, idt) for i, idt in zip(range(ntrain),idt_train)])
-            tmp_rest = pd.concat([lbl_freq(yhat_rest[i], conn, idt) for i, idt in zip(range(nrest),idt_val)])
-            # Merge and annotate
-            tmp_both = pd.concat([tmp_train, tmp_rest], axis=0).assign(cell=cell, thresh=thresh, conn=conn)
-            holder.append(tmp_both)
+            tmp_val = pd.concat([lbl_freq(yhat_val[i], conn, idt) for i, idt in zip(range(n_val),idt_val)]).assign(cell=cell, thresh=thresh, conn=conn)
+            holder.append(tmp_val)
 # Combine all results
 res_cell = pd.concat(holder).reset_index(None, drop=True)
 # Merge with dataset type
 res_cell.rename(columns={'idx':'idt'}, inplace=True)
-res_cell = res_cell.merge(df_ds_tt_idt[df_ds_tt_idt['tt'] != 'test'])
+# res_cell = res_cell.merge(df_ds_tt_idt[df_ds_tt_idt['tt'] != 'test'])
 
 # Loop over each combination and the relationship between the n cut-off
 q_seq = np.arange(0.05,1,0.05)
@@ -368,29 +367,26 @@ for jj, cell in enumerate(cells):
         for conn in conn_seq:
             print('cell=%s, thresh=%.5f, conn=%i' % (cell, thresh, conn))
             tmp_df2 = tmp_df1.query('conn==@conn & thresh==@thresh').reset_index(None, drop=True)
-            n_seq = np.sort(tmp_df2.query('tt=="val"')['n'].unique())
+            n_seq = np.sort(tmp_df2['n'].unique())
             if len(n_seq) > len(q_seq):
                 n_seq = np.quantile(n_seq, q_seq)
             for n in n_seq:
                 tmp_n = tmp_df2.groupby('idt').apply(lambda x: np.sum(x.n >= n)).reset_index()
                 tmp_n = tmp_n.rename(columns={0:'est'}).assign(cell=cell)
-                tmp_n = tmp_n.merge(df_cells_long).merge(df_ds_tt_idt)
-                tmp_n = tmp_n.groupby(['tt']).apply(lambda x: pd.Series({'rho':rho(x.act, x.est),'r2':r2_score(x.act, x.est)}))
-                tmp_n = tmp_n.reset_index().assign(cell=cell,thresh=kk,conn=conn,n=n)
+                tmp_n = tmp_n.merge(df_cells_long)#.merge(df_ds_tt_idt)
+                tmp_n = tmp_n.groupby('cell').apply(lambda x: pd.Series({'rho':rho(x.act, x.est),'r2':r2_score(x.act, x.est)}))
+                tmp_n = tmp_n.reset_index().assign(thresh2=kk, thresh=thresh,conn=conn,n=n)
                 holder.append(tmp_n)
 # Merge and visually inspect trade-off
 res_rho = pd.concat(holder).reset_index(None,drop=True)
-res_rho['tt'] = res_rho['tt'].map(di_tt)
-res_rho['ds'] = res_rho['ds'].map(di_ds)
-res_rho['cell'] = res_rho['cell'].map(di_cell)
 # Melt on rho vs r2
-cn_rho = ['tt','cell','thresh','conn','n']
+cn_rho = ['cell','thresh','thresh2','conn','n']
 res_rho = res_rho.melt(cn_rho, cn_msr, 'msr')
 # Clip the r-squared
-res_rho['value'] = res_rho['value'].clip(-1,1)
+res_rho['value'] = res_rho['value'].clip(-1)
 res_rho['n2'] = 0
 # Convert the min-number into a rank as well for easier plotting
-cn_n = ['cell','thresh','msr','conn']
+cn_n = ['cell','thresh2','msr','conn']
 res_rho['gg'] = res_rho[cn_n].astype(str).apply(lambda x: x.str.cat(sep='-'),1)
 assert res_rho.groupby('gg').apply(lambda x: x.n.unique().shape[0]).var() == 0, 'Unexpected number of thresholds'
 tmp_di_n = res_rho.groupby('gg')['n'].apply(lambda x: x.unique()).to_dict()
@@ -400,15 +396,17 @@ for k in tmp_di_n:
     res_rho.loc[res_rho['gg']==k,'n2'] = tmp_n2.map(tmp_di_n[k])
 
 # Find the "best" point for each cell/dataset
-res_rho_star = res_rho.loc[res_rho.groupby(['msr','tt','cell','thresh'])['value'].idxmax()]
+res_rho_star = res_rho.loc[res_rho.groupby(['msr','cell','thresh2'])['value'].idxmax()]
 res_rho_star.reset_index(None, drop=True, inplace=True)
+res_rho_star.drop(columns='gg',inplace=True)
 
 # Performance as a function of n and thresh --- #
 for msr in cn_msr:
-    tmp_df = res_rho.query('msr == @msr & tt=="Val"').dropna().reset_index(None, drop=True)
-    tmp_df.rename(columns={'thresh':'Thresh_Rank'}, inplace=True)
-    tmp_star = res_rho_star.query('msr == @msr & tt=="Val"')
-    tmp_star.rename(columns={'thresh':'Thresh_Rank'}, inplace=True)
+    tmp_df = res_rho.query('msr == @msr').dropna().reset_index(None, drop=True)
+    tmp_df['cell'] = tmp_df['cell'].map(di_cell)
+    tmp_df = tmp_df.rename(columns={'thresh2':'Thresh_Rank'}).drop(columns='msr')
+    tmp_star = res_rho_star.query('msr == @msr').rename(columns={'thresh2':'Thresh_Rank'})
+    tmp_star['cell'] = tmp_star['cell'].map(di_cell)
     tmp_hlines = tmp_star.groupby('cell').value.max().reset_index()
     tmp_fn = 'gg_thresh_n_' + msr + '.png'
     tmp_gg = (pn.ggplot(tmp_df, pn.aes(x='n2',y='value',color='cell',linetype='conn.astype(str)',group='gg')) + 
@@ -420,16 +418,16 @@ for msr in cn_msr:
         pn.geom_hline(yintercept=0) + 
         pn.geom_hline(pn.aes(yintercept='value',color='cell'),data=tmp_hlines,linetype='--') + 
         pn.ggtitle('Dashed lines show connectivity==2') + 
-        pn.geom_point(data=tmp_star,inherit_aes=True,size=2) + 
+        pn.geom_point(pn.aes(x='n2',y='value',color='cell'),inherit_aes=False,data=tmp_star,size=2) + 
         pn.theme(subplots_adjust={'wspace': 0.1},legend_position=(0.5,-0.0), legend_direction='horizontal') +
         pn.labs(y='Measure = %s' % msr,x='Minimum cell count rank'))
     gg_save(tmp_fn, dir_figures, tmp_gg, 15, 7.5)
 
 
 # Plot the overall trade-off
-tmp = res_rho_star.query('tt == "Val"').drop(columns=['tt','n'])
-tmp['thresh'] = pd.Categorical(tmp['thresh'])
-gg_rho_star = (pn.ggplot(tmp,pn.aes(x='thresh',y='n2',color='cell',shape='msr')) + 
+tmp = res_rho_star.drop(columns=['n'])
+tmp['thresh2'] = pd.Categorical(tmp['thresh2'])
+gg_rho_star = (pn.ggplot(tmp,pn.aes(x='thresh2',y='n2',color='cell',shape='msr')) + 
     pn.geom_point(position=pn.position_dodge(0.5)) + 
     pn.theme_bw() + pn.scale_color_discrete(name='Cell') + 
     pn.scale_shape_manual(name='Measure',values=['$R$','$ρ$']) + 
@@ -437,72 +435,55 @@ gg_rho_star = (pn.ggplot(tmp,pn.aes(x='thresh',y='n2',color='cell',shape='msr'))
 gg_save('gg_rho_star.png', dir_figures, gg_rho_star, 6, 4)
 
 
-
 ##############################
 ## --- (6) FIND OPTIMAL --- ##
 
-
+# ---(i) Create the dictionary to store the "optimal" values for later
 di_conn = {'cells':cells, 'thresh':np.zeros(n_cells), 'conn':np.zeros(n_cells), 'n':np.zeros(n_cells)}
 
-holder = []
 for jj, cell in enumerate(cells):
-    Cell = di_cell[cell]
-    tmp_star = res_rho_star.query('cell == @Cell & tt == "Val" & msr=="r2"')
-    tmp_star = tmp_star.reset_index(None,drop=True).drop(columns=['cell','tt','msr'])
+    tmp_star = res_rho_star.query('cell == @cell & msr=="r2"')
+    tmp_star = tmp_star.reset_index(None,drop=True).drop(columns=['cell','msr'])
     tmp_star = tmp_star.query('value == value.max()')
     assert len(tmp_star) == 1
     for cn in ['thresh','conn','n']:
         di_conn[cn][jj] = tmp_star[cn].values[0]
+# Save
+path_conn = os.path.join(dir_output,'di_conn.pickle')
+hickle.dump(di_conn, path_conn, 'w')
 
-    # Get the scatter plot for the remainder
-    sigmoid(holder_logits[:, jj, :, :])
+# --- (ii) Get predicted/actual for all images --- #
+holder = []
+for ii in range(n_sets):
+    if (ii + 1) % 50 == 0:
+        print('Iteration %i of %i' % (ii+1, n_sets))
+    tmp_ii = df_sets.loc[[ii]].merge(df_cells,'left')
+    h_ii = tmp_ii['h'].values[0]
+    w_ii = tmp_ii['w'].values[0]
+    idt_ii = tmp_ii['idt'].values[0]
+    ds_ii = tmp_ii['ds'].values[0]
+    tt_ii = tmp_ii['tt'].values[0]
+    for jj, cell in enumerate(cells):    
+        thresh_jj = di_conn['thresh'][jj]
+        conn_jj = di_conn['conn'][jj]
+        n_jj = di_conn['n'][jj]
+        phat_ii_jj = sigmoid(holder_logits[ii, jj, :, :])
+        # Remove missing values
+        phat_ii_jj = phat_ii_jj[:h_ii,:w_ii]
+        assert np.isnan(phat_ii_jj).sum() == 0, 'Missing values still exist'
+        ybin_ii_jj = np.where(phat_ii_jj >= thresh_jj, 1, 0)
+        yhat_ii_jj = lbl_freq(ybin_ii_jj, conn_jj, idt_ii)
+        yhat_ii_jj = yhat_ii_jj.assign(n=lambda x: np.where(x.n < n_jj, np.nan, x.n))
+        yhat_ii_jj = yhat_ii_jj.assign(cell=cell, ds=ds_ii, tt=tt_ii)
+        holder.append(yhat_ii_jj)
+# Merge and calculate
+df_post = pd.concat(holder).rename(columns={'idx':'idt'})
+df_post = df_post.groupby(['cell','ds','idt','tt'])['n'].apply(lambda x: x.notnull().sum()).reset_index()
+df_post = df_post.rename(columns={'n':'est'}).merge(df_cells_long)
+df_post_rho = df_post.groupby(['cell','tt']).apply(lambda x: pd.Series({'r2':r2_score(x.act, x.est), 'rho':rho(x.act, x.est)}))
+df_post_rho.reset_index(inplace=True)
+df_post_rho['txt'] = df_post_rho.apply(lambda x: 'R2=%.1f%%, Rho=%.1f%%' % (x.r2*100,x.rho*100),1)
 
-    np.where()
-
-    tmp_star['conn'].values[0]
-    int(tmp_star['n'].values[0])
-#     phat_val = sigmoid(holder_logits[idx_val, jj, :, :])
-#     ybin_val = holder_lbls[idx_val, jj, :, :]
-#     thresh_val = np.quantile(phat_val[ybin_val==1], np.linspace(0, 1, nquant)[1:-1])
-#     for msr in tmp_star.msr.unique():
-#         print('~~~~ cell = %s, msr=%s ~~~~' % (cell, msr))
-#         tmp_star_msr = tmp_star.query('msr==@msr').reset_index(None, drop=True)
-#         thresh_idx_star = tmp_star_msr.thresh[0]
-#         n_star = tmp_star_msr.n[0]
-#         conn_star = tmp_star_msr.conn[0]
-#         thresh_star = thresh_train[thresh_idx_star]
-#         # Apply threshold
-#         yhat_train = np.where(phat_train >= thresh_star, 1, 0)
-#         yhat_rest = np.where(phat_rest >= thresh_star, 1, 0)
-#         # Connect connectivity map
-#         tmp_train = pd.concat([lbl_freq(yhat_train[i], conn_star, idt) for i, idt in zip(range(ntrain),idt_train)])
-#         tmp_rest = pd.concat([lbl_freq(yhat_rest[i], conn_star, idt) for i, idt in zip(range(nrest),idt_rest)])
-#         tmp_both = pd.concat([tmp_train, tmp_rest], axis=0)
-#         tmp_both = tmp_both.groupby('idx').apply(lambda x: np.sum(x.n >= n_star))
-#         tmp_both = tmp_both.reset_index().rename(columns={'idx':'idt_tissue',0:'est'})
-#         tmp_both = tmp_both.assign(cell=cell).merge(df_cells_long).merge(df_ds_tt_idt)
-#         tmp_both = tmp_both.assign(thresh=thresh_star, n=n_star, conn=conn_star, msr=msr)
-#         holder_n.append(tmp_both)
-#         # Use the R-squared model
-#         if msr == 'r2':
-#             di_conn['thresh'][jj] = thresh_star
-#             di_conn['conn'][jj] = conn_star
-#             di_conn['n'][jj] = n_star
-#             tmp1 = np.stack([phat2lbl(yhat_train[i], thresh_star, n_star, conn_star) for i in range(ntrain)],axis=0)
-#             tmp2 = np.stack([phat2lbl(yhat_rest[i], thresh_star, n_star, conn_star) for i in range(nrest)],axis=0)
-#             di_conn['post'][:, jj, :, :] = np.vstack([tmp1, tmp2])
-#             del tmp1, tmp2
-# res_scatter = pd.concat(holder_n).reset_index(None, drop=True)
-# res_scatter.tt = pd.Categorical(res_scatter.tt,list(di_tt)).map(di_tt)
-
-# # Save for later
-# path_conn = os.path.join(dir_output,'di_conn.pickle')
-# hickle.dump(di_conn, path_conn, 'w')
-
-# di_conn = hickle.load(path_conn)
-# {k:v.shape for k,v in di_conn.items()}
-
-# https://scikit-image.org/docs/dev/auto_examples/applications/plot_human_mitosis.html#sphx-glr-auto-examples-applications-plot-human-mitosis-py
 
 ######################
 ## --- (7) UNET --- ##
@@ -512,29 +493,47 @@ df_unet = pd.DataFrame(df_unet / fillfac, columns=cells)
 df_unet = pd.concat(objs=[df_sets, df_unet], axis=1)
 df_unet = df_unet.melt(['tt','ds','idt'],cells,'cell','est')
 df_unet = df_unet.merge(df_cells_long)
-df_unet['cell'] = df_unet['cell'].map(di_cell)
-df_unet['tt'] = pd.Categorical(df_unet['tt'],list(di_tt)).map(di_tt)
 
 df_unet_rho = df_unet.groupby(['cell','tt']).apply(lambda x: pd.Series({'r2':r2_score(x.act, x.est), 'rho':rho(x.act, x.est)}))
 df_unet_rho.reset_index(inplace=True)
 df_unet_rho['txt'] = df_unet_rho.apply(lambda x: 'R2=%.1f%%, Rho=%.1f%%' % (x.r2*100,x.rho*100),1)
 
-gg_scatter_unet = (pn.ggplot(df_unet,pn.aes(x='est',y='act',color='tt')) + 
+# Merge with post-hoc and plot
+df_both_scatter = pd.concat(objs=[df_post.assign(mdl='Post-Hoc'), df_unet.assign(mdl='U-Net')],axis=0)
+df_both_scatter['cell'] = df_both_scatter['cell'].map(di_cell)
+df_both_scatter['tt'] = pd.Categorical(df_both_scatter['tt'],list(di_tt)).map(di_tt)
+# Repeat for aggregate
+df_both_rho = pd.concat(objs=[df_post_rho.assign(mdl='Post-Hoc'), df_unet_rho.assign(mdl='U-Net')],axis=0)
+df_both_rho['cell'] = df_both_rho['cell'].map(di_cell)
+df_both_rho['tt'] = pd.Categorical(df_both_rho['tt'],list(di_tt)).map(di_tt)
+df_both_rho = df_both_rho.melt(['tt','cell','mdl'],cn_msr,'msr')
+
+# (i) Plot scatter
+gg_scatter_unet_post = (pn.ggplot(df_both_scatter,pn.aes(x='np.log(est+1)',y='np.log(act+1)',color='tt')) + 
     pn.theme_bw() + pn.geom_point() + 
     pn.scale_color_discrete(name='Dataset') + 
     pn.geom_abline(slope=1,intercept=0,color='black',linetype='--') + 
-    pn.facet_wrap('~cell+tt',scales='free',nrow=2) + 
-    pn.theme(subplots_adjust={'wspace': 0.20, 'hspace':0.40}) + 
+    pn.facet_grid('mdl~cell+tt',scales='free') + 
+    pn.theme(subplots_adjust={'wspace': 0.1}) + 
     pn.guides(color=False) + 
-    pn.labs(x='Predicted',y='Actual'))
-gg_save('gg_scatter_unet.png', dir_figures, gg_scatter_unet, 13, 6)
+    pn.labs(x='log(Predicted+1)',y='np.log(Actual+1)'))
+gg_save('gg_scatter_unet_post.png', dir_figures, gg_scatter_unet_post, 12, 5)
+
+# (ii) Plot R-squared
+gg_rho_unet_post = (pn.ggplot(df_both_rho,pn.aes(x='tt',y='value',color='mdl')) + 
+    pn.geom_point(position=pn.position_dodge(0.5)) + 
+    pn.theme_bw() + 
+    pn.ggtitle('For aggregate predicted vs actual') + 
+    pn.facet_grid('msr ~ cell',labeller=pn.labeller(msr=di_msr)) + 
+    pn.theme(axis_title_x=pn.element_blank()) + 
+    pn.scale_color_discrete(name='Model') + 
+    pn.scale_y_continuous(labels=percent_format(), limits=[0,1]) + 
+    pn.labs(y='Percent'))
+gg_save('gg_rho_unet_post.png', dir_figures, gg_rho_unet_post, 6, 5)
 
 
-
-#########################
-## --- (8) FIGURES --- ##
-
-# --- (v) UNet scatter --- #
+###############################
+## --- (8) EXTRA FIGURES --- ##
 
 
 # # --- (iv) Actual, phat, post-proc --- #
@@ -557,20 +556,6 @@ gg_save('gg_scatter_unet.png', dir_figures, gg_scatter_unet, 13, 6)
 #     post_plot(img=img_ii, lbls=lbls_ii, phat=phat_ii, yhat=yhat_ii, 
 #               fillfac=fillfac, cells=cells, thresh=di_conn['thresh'],
 #               fold=dir_inference, fn=fn_idt, title=idt)
-
-
-
-
-# # --- (ii) Visualize the "best" scatter --- #
-# gg_scatter_star = (pn.ggplot(res_scatter,pn.aes(x='est',y='act',color='tt')) + 
-#     pn.theme_bw() + pn.geom_point() + 
-#     pn.scale_color_discrete(name='Dataset') + 
-#     pn.geom_abline(slope=1,intercept=0,color='black',linetype='--') + 
-#     pn.facet_wrap('~cell+msr+tt',scales='free', nrow=4) + 
-#     pn.theme(subplots_adjust={'wspace': 0.20, 'hspace':0.50}) + 
-#     pn.guides(color=False) + 
-#     pn.labs(x='Predicted',y='Actual'))
-# gg_save('gg_scatter_star.png', dir_figures, gg_scatter_star, 13, 12)
 
 
 # # --- (iii) Point estimate and CI for correlation/R-squared --- #
