@@ -1,13 +1,6 @@
 # Script to analyze performance of model on test set with both pixel-wise and clustered performance
 
 import argparse
-
-from pandas._config.config import reset_option
-from plotnine.facets.facet_grid import facet_grid
-from plotnine.labels import ggtitle
-from plotnine.scales.scale_xy import scale_x_log10, scale_y_continuous, scale_y_log10
-from plotnine.themes.elements import element_blank
-from plotnine.themes.themeable import axis_title_x
 parser = argparse.ArgumentParser()
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
 args = parser.parse_args()
@@ -26,7 +19,7 @@ import hickle
 from time import time
 from funs_support import find_dir_cell, makeifnot, read_pickle, t2n, sigmoid, makeifnot
 from cells import valid_cells, inflam_cells, di_ds, di_tt
-from funs_stats import global_auroc, global_auprc, rho, phat2lbl, lbl_freq
+from funs_stats import global_auroc, global_auprc, rho, lbl_freq, phat2lbl
 import plotnine as pn
 from mizani.formatters import percent_format
 from scipy import stats
@@ -502,13 +495,9 @@ df_unet_rho['txt'] = df_unet_rho.apply(lambda x: 'R2=%.1f%%, Rho=%.1f%%' % (x.r2
 df_both_scatter = pd.concat(objs=[df_post.assign(mdl='Post-Hoc'), df_unet.assign(mdl='U-Net')],axis=0)
 df_both_scatter['cell'] = df_both_scatter['cell'].map(di_cell)
 df_both_scatter['tt'] = pd.Categorical(df_both_scatter['tt'],list(di_tt)).map(di_tt)
-# Repeat for aggregate
-df_both_rho = pd.concat(objs=[df_post_rho.assign(mdl='Post-Hoc'), df_unet_rho.assign(mdl='U-Net')],axis=0)
-df_both_rho['cell'] = df_both_rho['cell'].map(di_cell)
-df_both_rho['tt'] = pd.Categorical(df_both_rho['tt'],list(di_tt)).map(di_tt)
-df_both_rho = df_both_rho.melt(['tt','cell','mdl'],cn_msr,'msr')
+df_both_scatter.reset_index(None, drop=True, inplace=True)
 
-# (i) Plot scatter
+# --- Plot scatter --- #
 gg_scatter_unet_post = (pn.ggplot(df_both_scatter,pn.aes(x='np.log(est+1)',y='np.log(act+1)',color='tt')) + 
     pn.theme_bw() + pn.geom_point() + 
     pn.scale_color_discrete(name='Dataset') + 
@@ -519,75 +508,75 @@ gg_scatter_unet_post = (pn.ggplot(df_both_scatter,pn.aes(x='np.log(est+1)',y='np
     pn.labs(x='log(Predicted+1)',y='np.log(Actual+1)'))
 gg_save('gg_scatter_unet_post.png', dir_figures, gg_scatter_unet_post, 12, 5)
 
-# (ii) Plot R-squared
-gg_rho_unet_post = (pn.ggplot(df_both_rho,pn.aes(x='tt',y='value',color='mdl')) + 
-    pn.geom_point(position=pn.position_dodge(0.5)) + 
-    pn.theme_bw() + 
-    pn.ggtitle('For aggregate predicted vs actual') + 
-    pn.facet_grid('msr ~ cell',labeller=pn.labeller(msr=di_msr)) + 
-    pn.theme(axis_title_x=pn.element_blank()) + 
-    pn.scale_color_discrete(name='Model') + 
-    pn.scale_y_continuous(labels=percent_format(), limits=[0,1]) + 
-    pn.labs(y='Percent'))
-gg_save('gg_rho_unet_post.png', dir_figures, gg_rho_unet_post, 6, 5)
-
 
 ###############################
 ## --- (8) EXTRA FIGURES --- ##
 
+# Repeat for aggregate
+df_both_rho = pd.concat(objs=[df_post_rho.assign(mdl='Post-Hoc'), df_unet_rho.assign(mdl='U-Net')],axis=0)
+df_both_rho['cell'] = df_both_rho['cell'].map(di_cell)
+df_both_rho['tt'] = pd.Categorical(df_both_rho['tt'],list(di_tt)).map(di_tt)
+df_both_rho = df_both_rho.melt(['tt','cell','mdl'],cn_msr,'msr')
 
-# # --- (iv) Actual, phat, post-proc --- #
-# idt_test = df_ds_tt_idt[df_ds_tt_idt.tt.isin(['test','oos'])].idt_tissue.to_list()
-# for kk, idt in enumerate(idt_test):
-#     print('image %i of %i (%s)' % (kk+1,len(idt_test),idt))
-#     # Find indexes
-#     ii = np.where(di_conn['idt_tissue'] == idt)[0][0]
-#     ds, tt = df_tt.query('idt_tissue==@idt')[['ds','tt']].values.flat
-#     # Load images/labels
-#     img_ii = di_data[ds][idt]['img']
-#     lbls_ii = np.dstack([di_data[ds][idt]['lbls'][:,:,di_idx[cell]].sum(2) for cell in cells])
-#     # Extract phat/yhat
-#     logits_ii = di_conn['logits'][ii].transpose(1,2,0)    
-#     post_ii = di_conn['post'][ii].transpose(1,2,0)
-#     phat_ii = sigmoid(logits_ii)
-#     yhat_ii = np.where(phat_ii >= np.expand_dims(di_conn['thresh'],[0,1]),1,0)
-#     # Plot it
-#     fn_idt = ds + '_' + tt + '_' + idt + '.png'
-#     post_plot(img=img_ii, lbls=lbls_ii, phat=phat_ii, yhat=yhat_ii, 
-#               fillfac=fillfac, cells=cells, thresh=di_conn['thresh'],
-#               fold=dir_inference, fn=fn_idt, title=idt)
+# --- (i) Uncertainty ranges about R2 + Rho --- #
+n_bs = 250
+alpha = 0.05
+cn_gg = ['cell','tt','mdl']
+holder_bs = []
+for i in range(n_bs):
+    if (i + 1) % 50 == 0:
+        print(i+1)
+    tmp_bs = df_both_scatter.groupby(cn_gg).sample(frac=1,replace=True,random_state=i)
+    tmp_bs = tmp_bs.groupby(cn_gg).apply(lambda x: pd.Series({'r2':r2_score(x.act, x.est), 'rho':rho(x.act, x.est)}))
+    holder_bs.append(tmp_bs)
+# Merge
+tmp_df = pd.concat(holder_bs).reset_index().melt(cn_gg,None,'msr')
+tmp_df = tmp_df.groupby(cn_gg+['msr']).value.quantile([alpha/2, 1-alpha/2]).reset_index()
+tmp_df = tmp_df.reset_index().pivot_table('value',cn_gg+['msr'],'level_'+str(len(cn_gg)+1))
+tmp_df = tmp_df.reset_index().rename(columns={alpha/2:'lb', 1-alpha/2:'ub'})
+df_both_rho = df_both_rho.merge(tmp_df)
+
+# (ii) Plot R-squared
+posd = pn.position_dodge(0.5)
+gg_rho_unet_post = (pn.ggplot(df_both_rho,pn.aes(x='tt',y='value',color='mdl')) + 
+    pn.geom_point(position=posd) + pn.theme_bw() + 
+    pn.geom_linerange(pn.aes(ymin='lb',ymax='ub'), position=posd) + 
+    pn.ggtitle('For aggregate predicted vs actual') + 
+    pn.facet_grid('msr ~ cell',labeller=pn.labeller(msr=di_msr)) + 
+    pn.theme(axis_title_x=pn.element_blank()) + 
+    pn.scale_color_discrete(name='Model') + 
+    pn.scale_y_continuous(labels=percent_format()) + 
+    pn.labs(y='Percent'))
+gg_save('gg_rho_unet_post.png', dir_figures, gg_rho_unet_post, 6, 5)
 
 
-# # --- (iii) Point estimate and CI for correlation/R-squared --- #
-# n_bs = 250
-# alpha = 0.05
-# cn_gg = ['cell','tt','msr']
-# holder_bs = []
-# for i in range(n_bs):
-#     for msr in res_scatter.msr.unique():
-#         tmp_msr = res_scatter.query('msr == @msr')
-#         tmp_df = tmp_msr.groupby(cn_gg).sample(frac=1,replace=True, random_state=i)
-#         tmp_df = tmp_df.groupby(cn_gg).apply(lambda x: 
-#             pd.Series({'r2':r2_score(x.act, x.est), 'rho':rho(x.act, x.est)}))
-#         tmp_df = tmp_df[msr].reset_index().rename(columns={msr:'value'}).assign(bidx=i)
-#         holder_bs.append(tmp_df)
-# # Merge
-# tmp_df = pd.concat(holder_bs).groupby(cn_gg).value.quantile([alpha/2, 1-alpha/2])
-# tmp_df = tmp_df.reset_index().pivot_table('value',cn_gg,'level_3')
-# tmp_df = tmp_df.reset_index().rename(columns={alpha/2:'lb', 1-alpha/2:'ub'})
-# res_cell_perf = res_rho_star.merge(tmp_df)
+# --- (ii) Actual, phat, post-proc --- #
+test_rows = df_sets.query('tt == "test"')
+for kk, (ii, rr) in enumerate(test_rows.iterrows()):
+    ds, idt, tt = rr['ds'], rr['idt'], rr['tt']
+    h_ii, w_ii = df_cells.query('ds==@ds & idt==@idt')[['h','w']].values.flat
+    print('image %i of %i (%s)' % (kk+1,len(test_rows),idt))
+    
+    # (i) Extract data
+    phat_ii = sigmoid(holder_logits[ii,:,:h_ii,:w_ii])
+    yhat_ii = np.stack([phat2lbl(phat=phat_ii[k], thresh=di_conn['thresh'][k], n=di_conn['n'][k], connectivity=di_conn['conn'][k]) for k in range(len(cells))],axis=0)
 
-# # Show the metrics
-# posd = pn.position_dodge(0.5)
-# gg_perf_star = (pn.ggplot(res_cell_perf,pn.aes(x='msr',y='value',color='cell')) + 
-#     pn.theme_bw() + pn.geom_point(position=posd) + 
-#     pn.geom_linerange(pn.aes(ymin='lb',ymax='ub'),position=posd) + 
-#     pn.scale_color_discrete(name='Cell') + 
-#     pn.labs(y='Percent',x='Metric') + 
-#     pn.geom_hline(yintercept=0,linetype='--') + 
-#     pn.ggtitle('Linerange shows 95% CI') + 
-#     pn.theme(subplots_adjust={'wspace': 0.25}) + 
-#     pn.facet_wrap('~tt',nrow=2))
-# gg_save('gg_perf_star.png', dir_figures, gg_perf_star, 6, 5)
+    img_ii = di_tt_ds[tt][ds][idt]['img']
+    lbl_ii = di_tt_ds[tt][ds][idt]['lbls']
+    cell_ii = np.zeros(phat_ii.shape)
+    for jj, (k,v) in enumerate(di_idx.items()):
+        cell_ii[jj] = lbl_ii[:,:,di_idx[k]].sum(2)
+
+    # Transpose to (h,w,c)
+    cell_ii = cell_ii.transpose(1,2,0)
+    phat_ii = phat_ii.transpose(1,2,0)
+    yhat_ii = yhat_ii.transpose(1,2,0)
+
+    # (ii) Plot
+    fn_idt = '%s_%s_%s.png' % (ds, tt, idt)
+    post_plot(img=img_ii, lbls=cell_ii, phat=phat_ii, yhat=yhat_ii, fillfac=fillfac, fold=dir_inference, fn=fn_idt, cells=cells, thresh=di_conn['thresh'], title=idt)
+
+
+
 
 print('~~~ End of 11_explore_test.py ~~~')

@@ -65,7 +65,7 @@ mdl:        A dictionary by different cells
 conn:       A dictionary with thresh, conn, and n keys
 img:        A h x w x c numpy array
 """
-# mdl=di_mdl.copy();conn=di_conn.copy();img=arr_images[j].copy()
+# mdl=di_mdl.copy();conn=di_conn.copy();img=img_j
 def inf_thresh_cluster(mdl, conn, img, device):
     # (i) Run checks
     assert isinstance(mdl, dict), 'mdl is not a dictionary'

@@ -12,13 +12,11 @@ python -u 10_rename_mdls.py
 
 echo "--- (11) EXPLORE TEST SET ---"
 python -u 11_explore_test.py --nfill $nfill --check_flips
-#       ~/output/
-
+#       ~/output/figures/{*.png}/
+#       ~/output/figures/inference/{*.png}
 
 # echo "--- (12) EXPLORE INTER-ANNOTATOR ---"
-
-# echo "--- (13) FIND PEAK EOSIN ---"
-
+python -u 12_explore_inter.py --nfill $nfill --annotators $annotators
 
 
-
+echo "~~~ End of 9_analyze_test.sh ~~~"

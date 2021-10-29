@@ -1,8 +1,6 @@
 # Script to explore the inter-annotator variability
 
 import argparse
-
-from plotnine.geoms.geom_hline import geom_hline
 parser = argparse.ArgumentParser()
 parser.add_argument('-a','--annotators', nargs='+', help='List of folders for the different annotators', required=True)
 parser.add_argument('--nfill', type=int, default=1, help='How many points to pad around pixel annotation point')
@@ -11,14 +9,13 @@ annotators = args.annotators
 nfill = args.nfill
 print('args = %s' % args)
 
-# For debugging
-annotators = ['dua', 'oscar']
-nfill=1
+# # For debugging
+# annotators = ['dua', 'oscar']
+# nfill=1
 
 # number of padded points (i.e. count inflator)
 fillfac = (2 * nfill + 1) ** 2
 print('nfill: %i, fillfac: x%i' % (nfill, fillfac))
-
 
 import os
 import torch
@@ -28,7 +25,8 @@ import pandas as pd
 import plotnine as pn
 from sklearn.metrics import mean_absolute_error as mae
 from cells import valid_cells, inflam_cells
-from funs_support import find_dir_cell, zip_points_parse, read_pickle
+from funs_support import find_dir_cell, read_pickle
+from funs_label import zip_points_parse
 from funs_inf import khat2df, inf_thresh_cluster
 from funs_plotting import gg_save
 from funs_stats import get_pairwise, rho
@@ -38,6 +36,7 @@ dir_base = find_dir_cell()
 dir_images = os.path.join(dir_base, 'images')
 dir_points = os.path.join(dir_base, 'points')
 dir_output = os.path.join(dir_base, 'output')
+dir_checkpoint = os.path.join(dir_output, 'checkpoint')
 dir_best = os.path.join(dir_output,'best')
 dir_figures = os.path.join(dir_output, 'figures')
 assert all([os.path.exists(ff) for ff in [dir_images, dir_points, dir_output, dir_best, dir_figures]])
@@ -105,28 +104,39 @@ df_anno = df_anno.assign(cell=lambda x: np.where(x.valid == 'eosinophil','eosin'
 # (v) Calculate aggregate
 df_anno_n = df_anno.groupby(['anno','idt','cell']).size().reset_index()
 df_anno_n.rename(columns={0:'n'}, inplace=True)
+assert np.all(df_anno_n.groupby(['anno','idt','cell']).size() == 1), 'More than 1 annotation detected'
+
 
 ######################################
 # --- (2) GET MODEL INFERENCES --- #
 
-
-# (i) Load in the "best" models for each type
-fn_best = pd.Series(os.listdir(dir_best))
-fn_best = fn_best.str.split('\\_',1,True)
-fn_best.rename(columns={0:'cell',1:'fn'},inplace=True)
-di_fn = dict(zip(fn_best.cell,fn_best.fn))
-di_fn = {k:os.path.join(dir_best,k+'_'+v) for k,v in di_fn.items()}
-assert all([os.path.exists(v) for v in di_fn.values()])
-di_mdl = {k: read_pickle(v)['mdl'] for k, v in di_fn.items()}
-# Extract the module from DataParallel if exists
-di_mdl = {k:v.module if hasattr(v,'module') else v for k,v in di_mdl.items()}
-# Set to inference mode
-di_mdl = {k:v['mdl'].eval() for k,v in di_mdl.items()}
-# Use torch.float tensors
-di_mdl = {k:v.float() for k,v in di_mdl.items()}
-# Use model order for cells
-cells = list(di_mdl.keys())
+# (i) Load in the "best" models for each cell type
+cells = os.listdir(dir_checkpoint)
 n_cells = len(cells)
+
+di_mdl = dict.fromkeys(cells)
+for cell in cells:
+    dir_cell = os.path.join(dir_checkpoint, cell)
+    fn_cell = pd.Series(os.listdir(dir_cell))
+    fn_cell = fn_cell[fn_cell.str.contains('best_%s.pkl'%cell)]
+    assert len(fn_cell) == 1, 'Could not detect single best model'
+    fn_best = fn_cell.to_list()[0]
+    path_best = os.path.join(dir_cell, fn_best)
+    assert os.path.exists(path_best)
+    di_mdl[cell] = read_pickle(path_best)
+# Extract the hyperparameters
+dat_hp = [v['hp'].assign(cell=k) for k, v in di_mdl.items()]
+dat_hp = pd.concat(dat_hp).reset_index(None,drop=True)
+print('---- BEST HYPERPARAMETERS ----')
+print(dat_hp)
+# Drop the hp and keep only model
+di_mdl = {k: v['mdl'] for k, v in di_mdl.items()}
+# If model is wrapped in DataParallel extract model
+di_mdl = {k: v.module if hasattr(v,'module') else v for k, v in di_mdl.items() }
+di_mdl = {k: v.eval() for k, v in di_mdl.items()}
+di_mdl = {k: v.float() for k, v in di_mdl.items()}
+# Models should be eval mode
+assert all([not k.training for k in di_mdl.values()])
 
 # (ii) Extract the di_conn for optimal hyperparameter tuning
 path_conn = os.path.join(dir_output,'di_conn.pickle')
@@ -134,7 +144,6 @@ di_conn = hickle.load(path_conn)
 # Keep only the hyperparameters
 cn_conn = ['cells','thresh','conn','n']
 di_conn = {k:v for k,v in di_conn.items() if k in cn_conn}
-
 
 # (iii) Get image inference
 holder_n = []
@@ -144,11 +153,12 @@ for j in range(n_images):
     idt = idt_images[j]
     img_j = img_array[j]
     phat, yhat, khat = inf_thresh_cluster(mdl=di_mdl,conn=di_conn,img=img_j,device=device)
-    phat = np.stack(phat.values(),2)
-    khat = np.stack(khat.values(),2)
+    phat = np.stack(list(phat.values()), axis=2)
+    khat = np.stack(list(khat.values()), axis=2)
     # Get clustering count
     inf_khat = khat2df(khat, cells).drop(columns='grp')
     inf_khat = inf_khat.assign(anno='post',idt=idt)
+    inf_khat['cell'] = pd.Categorical(inf_khat['cell'],cells)
     # Calculate aggregate number
     n_khat = inf_khat.groupby('cell').size().reset_index()
     n_khat = n_khat.rename(columns={0:'n'}).assign(idt=idt,anno='post')
@@ -159,15 +169,16 @@ for j in range(n_images):
     holder_khat.append(inf_khat)
     holder_n.append(n_j)
     
-# (iv) Merge annotations
-anno_khat = pd.concat(holder_khat)
-df_anno = pd.concat(objs=[df_anno[anno_khat.columns],anno_khat])
-df_anno = df_anno[df_anno['cell'].isin(cells)].reset_index(None, drop=True)
+# (iv) 
+anno_n = pd.concat(holder_n).reset_index(None, drop=True)
+dat_n_all = pd.concat(objs=[df_anno_n, anno_n],axis=0)
+dat_n_all = dat_n_all[dat_n_all['cell'].isin(cells)].reset_index(None, drop=True)
+assert dat_n_all.groupby('anno').size().var() == 0, 'Huh?! One annotator has more images'
 
-# (v) Merge counts
-df_anno_n = pd.concat(objs=[df_anno_n,pd.concat(holder_n)],axis=0)
-df_anno_n = df_anno_n[df_anno_n['cell'].isin(cells)].reset_index(None, drop=True)
-assert df_anno_n.groupby('anno').size().var() == 0, 'Huh?! One annotator has more images'
+# (v) Merge annotations
+anno_khat = pd.concat(holder_khat).reset_index(None, drop=True)
+dat_anno_all = pd.concat(objs=[df_anno[anno_khat.columns],anno_khat],axis=0)
+dat_anno_all = dat_anno_all[dat_anno_all['cell'].isin(cells)].reset_index(None, drop=True)
 
 
 ####################################
@@ -180,7 +191,7 @@ lst_funs = [rho, mae]
 cn_gg = ['cell','fun','cn_1','cn_2']
 
 # Get pairwise matrix
-df_pairwise_n = df_anno_n.pivot_table('n',['cell','idt'],'anno')
+df_pairwise_n = dat_n_all.pivot_table('n',['cell','idt'],'anno')
 
 # (i) Pairwise rho/mae with uncertainty
 dat_rho_n = pd.concat(objs=[df_pairwise_n.groupby('cell').apply(get_pairwise,fun,False) for fun in lst_funs],axis=0)
@@ -188,10 +199,12 @@ dat_rho_n = dat_rho_n.reset_index().drop(columns='level_1')
 
 # Repeat with the bootstrap
 holder_bs = []
-for i in range(n_bs):
-    tmp_df = df_pairwise_n.groupby('cell').sample(frac=1,replace=True,random_state=i)
+for ii in range(n_bs):
+    if (ii + 1) % 50 == 0:
+        print(ii+1)
+    tmp_df = df_pairwise_n.groupby('cell').sample(frac=1,replace=True,random_state=ii)
     tmp_rho = pd.concat(objs=[tmp_df.groupby('cell').apply(get_pairwise,fun,False) for fun in lst_funs],axis=0)
-    tmp_rho = tmp_rho.reset_index().drop(columns='level_1').assign(bidx=i)
+    tmp_rho = tmp_rho.reset_index().drop(columns='level_1').assign(bidx=ii)
     holder_bs.append(tmp_rho)
 dat_rho_n_bs = pd.concat(holder_bs)
 dat_rho_n_bs = dat_rho_n_bs.groupby(cn_gg).stat.quantile([alpha/2,1-alpha/2]).reset_index()
@@ -258,13 +271,3 @@ gg_anno_pairwise_n = (pn.ggplot(dat_scatter,pn.aes(x='x',y='y',color='anno_y')) 
     pn.theme(subplots_adjust={'wspace': 0.15,'hspace':0.30}) + 
     pn.scale_color_discrete(name='Annotator-color'))
 gg_save('gg_anno_pairwise_n.png',dir_figures,gg_anno_pairwise_n,14,7)
-
-
-###################################
-# --- (4) SPATIAL CORRELATION --- #
-
-
-
-
-
-

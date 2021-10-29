@@ -85,8 +85,7 @@ def lbl_freq(arr, connectivity, idx=None, ret_clust=False):
     else:
         return freq
 
-# # phat=phat_train[0].copy(); thresh=thresh_star; n=n_star; connectivity=conn_star
-# # del phat, thresh, n, connectivity, yhat, lbls, freq, vkeep
+# phat, thresh, n, connectivity = phat_ii[k], di_conn['thresh'][k], di_conn['n'][k], di_conn['conn'][k]
 def phat2lbl(phat, thresh, n, connectivity):
     yhat = np.where(phat >= thresh, 1, 0)
     lbls = label(input=yhat, connectivity=connectivity)
