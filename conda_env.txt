@@ -6,6 +6,7 @@ https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.ta
 https://repo.anaconda.com/pkgs/main/linux-64/blas-1.0-mkl.conda
 https://conda.anaconda.org/conda-forge/linux-64/ca-certificates-2021.5.30-ha878542_0.tar.bz2
 https://repo.anaconda.com/pkgs/main/linux-64/intel-openmp-2021.3.0-h06a4308_3350.conda
+https://repo.anaconda.com/pkgs/main/linux-64/jpeg-9b-h024ee3a_2.conda
 https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.36.1-hea4e1c9_2.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/libgfortran5-11.2.0-h5c6108e_9.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-ng-11.2.0-he4da1e4_9.tar.bz2
@@ -18,7 +19,6 @@ https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-h7f98852_4.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/cudatoolkit-10.2.89-h8f6ccaa_9.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/gmp-6.2.1-h58526e2_0.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/jbig-2.1-h7f98852_2003.tar.bz2
-https://repo.anaconda.com/pkgs/main/linux-64/jpeg-9b-h024ee3a_2.conda
 https://conda.anaconda.org/conda-forge/linux-64/lame-3.100-h7f98852_1001.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/lerc-2.2.1-h9c3ff4c_0.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/libblas-3.9.0-1_h86c2bf4_netlib.tar.bz2
@@ -42,12 +42,14 @@ https://conda.anaconda.org/conda-forge/linux-64/liblapack-3.9.0-5_h92ddd45_netli
 https://conda.anaconda.org/conda-forge/linux-64/readline-8.1-h46c0cb4_0.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/zlib-1.2.11-h36c2ea0_1013.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/libpng-1.6.37-h21135ba_2.tar.bz2
+https://repo.anaconda.com/pkgs/main/linux-64/libtiff-4.2.0-h85742a9_0.conda
 https://conda.anaconda.org/conda-forge/linux-64/openh264-2.1.1-h780b84a_0.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/sqlite-3.36.0-h9cd32fc_2.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/tk-8.6.11-h27826a3_1.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/zstd-1.4.9-ha95c52a_0.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/freetype-2.10.4-h0708190_1.tar.bz2
-https://repo.anaconda.com/pkgs/main/linux-64/libtiff-4.2.0-h85742a9_0.conda
+https://repo.anaconda.com/pkgs/main/linux-64/lcms2-2.12-h3be6417_0.conda
+https://conda.anaconda.org/conda-forge/linux-64/openjpeg-2.4.0-hb52868f_1.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/python-3.7.10-hb7a2778_101_cpython.tar.bz2
 https://conda.anaconda.org/conda-forge/noarch/appdirs-1.4.4-pyh9f0ad1d_0.tar.bz2
 https://conda.anaconda.org/conda-forge/noarch/charset-normalizer-2.0.0-pyhd8ed1ab_0.tar.bz2
@@ -57,10 +59,8 @@ https://conda.anaconda.org/conda-forge/noarch/et_xmlfile-1.0.1-py_1001.tar.bz2
 https://conda.anaconda.org/pytorch/linux-64/ffmpeg-4.3-hf484d3e_0.tar.bz2
 https://conda.anaconda.org/conda-forge/noarch/fsspec-2021.10.0-pyhd8ed1ab_0.tar.bz2
 https://conda.anaconda.org/conda-forge/noarch/idna-3.1-pyhd3deb0d_0.tar.bz2
-https://repo.anaconda.com/pkgs/main/linux-64/lcms2-2.12-h3be6417_0.conda
 https://conda.anaconda.org/conda-forge/noarch/locket-0.2.0-py_2.tar.bz2
 https://conda.anaconda.org/conda-forge/noarch/olefile-0.46-pyh9f0ad1d_1.tar.bz2
-https://conda.anaconda.org/conda-forge/linux-64/openjpeg-2.4.0-hb52868f_1.tar.bz2
 https://conda.anaconda.org/conda-forge/noarch/pycparser-2.20-pyh9f0ad1d_2.tar.bz2
 https://conda.anaconda.org/conda-forge/noarch/pyparsing-2.4.7-pyh9f0ad1d_0.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/python_abi-3.7-2_cp37m.tar.bz2

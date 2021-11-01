@@ -34,10 +34,10 @@ if [[ -f "$path_hp" ]]; then
         done
         if [[ "$cell" == "inflam" ]]; then
             echo "Training inflammatory model"
-            python -u 4_run_mdl.py --is_inflam --nepoch $epoch --batch $batch --lr $lr --p $p --save_model
+            python -u 4_run_mdl.py --is_inflam --nepoch $nepoch --batch $batch --lr $lr --p $p --save_model
         else
             echo "Training eosinophil model"
-            python -u 4_run_mdl.py --is_eosin --nepoch $epoch --batch $batch --lr $lr --p $p --save_model
+            python -u 4_run_mdl.py --is_eosin --nepoch $nepoch --batch $batch --lr $lr --p $p --save_model
         fi
     done
 else

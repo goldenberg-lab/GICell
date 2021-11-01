@@ -3,9 +3,7 @@
 import os
 import shutil
 import pandas as pd
-import numpy as np
 from funs_support import find_dir_cell, hash_hp
-
 
 dir_base = find_dir_cell()
 dir_output = os.path.join(dir_base, 'output')
@@ -22,10 +20,11 @@ cn_hp = ['lr', 'p', 'batch', 'nepoch']
 
 di_hp = {}
 for ii, rr in df_hp.iterrows():
-    cell, lr, p, batch, epoch = rr['cell'], rr['lr'], rr['p'], rr['batch'], rr['epoch']
-    df_slice = pd.DataFrame({'lr':lr, 'p':p, 'batch':batch, 'nepoch':100},index=[0])
+    cell, lr, p, batch, nepoch = rr['cell'], rr['lr'], rr['p'], rr['batch'], rr['nepoch']
+    df_slice = pd.DataFrame({'lr':lr, 'p':p, 'batch':batch, 'nepoch':nepoch},index=[0])
     code_hash = hash_hp(df_slice, cn_hp)
     di_hp[cell] = code_hash
+print(di_hp)
 
 # (iii) Find the associated model
 for cell in os.listdir(dir_checkpoint):

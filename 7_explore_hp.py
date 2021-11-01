@@ -3,7 +3,6 @@
 import os
 import pickle
 import pandas as pd
-import numpy as np
 import plotnine as pn
 from funs_support import find_dir_cell
 from funs_plotting import gg_save
@@ -14,16 +13,6 @@ dir_base = find_dir_cell()
 dir_output = os.path.join(dir_base, 'output')
 dir_checkpoint = os.path.join(dir_output, 'checkpoint')
 dir_figures = os.path.join(dir_output, 'figures')
-
-def hp_2_str(df, cn):
-    assert df.columns.isin(cn).sum() == len(cn)
-    holder = pd.Series(np.repeat('',len(df)))
-    for i, c in enumerate(cn):
-        if i + 1 == len(cn):
-            holder += c + '=' + df[c].astype(str)
-        else:
-            holder += c + '=' + df[c].astype(str) + '_'
-    return holder
 
 def get_mi_mx(x):
     return pd.Series({'mi':x.min(), 'mx':x.max()})
@@ -61,15 +50,12 @@ dat_pr = pd.concat(holder_pr).melt(['cell','epoch','thresh']+cn_hp,None,'metric'
 dat_ce.to_csv(os.path.join(dir_output, 'dat_hp_ce.csv'),index=False)
 dat_pr.to_csv(os.path.join(dir_output, 'dat_hp_pr.csv'),index=False)
 
-# # Assign total hp
-# dat_ce.insert(0,'hp', hp_2_str(dat_ce, cn_hp))
-# dat_pr.insert(0,'hp', hp_2_str(dat_pr, cn_hp))
 
 ###############################
 ## --- (2) FIND BEST AUC --- ##
 
 # Best AUC by batch size
-best_auc = dat_ce.query('metric=="auc"').reset_index(None,True)
+best_auc = dat_ce.query('metric=="auc"').reset_index(None, drop=True)
 best_auc_batch = best_auc.loc[best_auc.groupby(['cell','batch']).value.idxmax()]
 best_auc_batch = best_auc_batch.sort_values(['cell','value'],ascending=[True,False])
 best_auc_batch.reset_index(None, drop=True, inplace=True)
@@ -80,7 +66,8 @@ se_auc = best_auc.groupby(['batch','lr','p']).value.std()
 se_auc = se_auc.reset_index().groupby('batch').value.mean().reset_index()
 batch_best = se_auc.query('value == value.min()')['batch'].values.min()
 hp_best = best_auc_batch.query('batch == @batch_best')
-hp_best = hp_best[list(df_hp.columns)+['epoch','cell']].reset_index(None,drop=True)
+hp_best.rename(columns={'epoch':'nepoch'}, inplace=True)
+hp_best = hp_best[list(df_hp.columns)+['cell']].reset_index(None,drop=True)
 hp_best.to_csv(os.path.join(dir_output, 'hp_best.csv'), index=False)
 
 tend = pd.to_datetime('2021-10-21 17:03')

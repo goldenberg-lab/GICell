@@ -255,6 +255,7 @@ gg_auroc_tt = (pn.ggplot(res_auc, pn.aes(x='tt',y='auc',color='cell')) +
     pn.scale_color_discrete(name='Type',labels=['Eosinophil','Inflammatory']))
 gg_save('gg_auroc_tt.png', dir_figures, gg_auroc_tt, 6, 4)
 
+
 #############################################
 ## --- (4) PIXEL-WISE PRECISION/RECALL --- ##
 
@@ -505,7 +506,7 @@ gg_scatter_unet_post = (pn.ggplot(df_both_scatter,pn.aes(x='np.log(est+1)',y='np
     pn.facet_grid('mdl~cell+tt',scales='free') + 
     pn.theme(subplots_adjust={'wspace': 0.1}) + 
     pn.guides(color=False) + 
-    pn.labs(x='log(Predicted+1)',y='np.log(Actual+1)'))
+    pn.labs(x='log(Predicted+1)',y='log(Actual+1)'))
 gg_save('gg_scatter_unet_post.png', dir_figures, gg_scatter_unet_post, 12, 5)
 
 
@@ -575,8 +576,6 @@ for kk, (ii, rr) in enumerate(test_rows.iterrows()):
     # (ii) Plot
     fn_idt = '%s_%s_%s.png' % (ds, tt, idt)
     post_plot(img=img_ii, lbls=cell_ii, phat=phat_ii, yhat=yhat_ii, fillfac=fillfac, fold=dir_inference, fn=fn_idt, cells=cells, thresh=di_conn['thresh'], title=idt)
-
-
 
 
 print('~~~ End of 11_explore_test.py ~~~')
