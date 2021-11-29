@@ -218,6 +218,7 @@ dat_rho_n = dat_rho_n.query('cn_1 != cn_2').reset_index(None,drop=True)
 # (ii) Plot correlation/MAE with humans on x
 tmp_anno = pd.Series(annotators).map(di_anno)
 tmp = dat_rho_n.query('cn_1.isin(@tmp_anno)')
+tmp.to_csv(os.path.join(dir_figures,'gg_anno_rho_n.csv'),index=False)
 posd = pn.position_dodge(0.5)
 gg_anno_rho_n = (pn.ggplot(tmp,pn.aes(x='cn_1',y='stat',color='cn_2')) + 
     pn.theme_bw() + pn.labs(x='Annotator',y='Value') + 

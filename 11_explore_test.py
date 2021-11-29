@@ -208,6 +208,7 @@ for tt in di_tt_ds:
 # Merge and save
 inf_stab = pd.concat(holder).reset_index(None,drop=True)
 inf_stab.to_csv(os.path.join(dir_output, 'inf_stab.csv'),index=False)
+# inf_stab = pd.read_csv(os.path.join(dir_output, 'inf_stab.csv'))
 # Convert ds/tt to labels
 inf_stab['ds'] = inf_stab['ds'].map(di_ds)
 inf_stab['tt'] = pd.Categorical(inf_stab['tt'],list(di_tt)).map(di_tt)
@@ -244,6 +245,7 @@ res_auc = inf_stab.query('rotate==0 & flip==0').drop(columns=['rotate','flip']).
 res_auc = res_auc.auc.apply(lambda x: pd.Series({'auc':x.mean(), 'n':len(x),'se':x.std(ddof=1)}))
 res_auc = res_auc.reset_index().pivot_table('auc',['tt','cell'],'level_2').reset_index()
 res_auc = res_auc.assign(lb=lambda x: x.auc-critv*x.se/np.sqrt(x.n), ub=lambda x: x.auc+critv*x.se/np.sqrt(x.n))
+res_auc.to_csv(os.path.join(dir_figures,'gg_auroc_tt.csv'),index=False)
 
 position = pn.position_dodge(0.5)
 gg_auroc_tt = (pn.ggplot(res_auc, pn.aes(x='tt',y='auc',color='cell')) + 

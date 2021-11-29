@@ -1,10 +1,6 @@
 # SCRIPT TO SPLIT TRAINING DATA INTO VALIDATION PORTION
 
 import argparse
-from plotnine.labels import ggtitle
-from plotnine.themes.themeable import legend_direction, legend_position
-
-from scipy.ndimage.morphology import distance_transform_cdt
 parser = argparse.ArgumentParser()
 parser.add_argument('--pval', type=float, default=0.2, help='Percent of non-test folders to apply random split to')
 parser.add_argument('--ds_test', nargs='+', help='Folders that should be reserved for testing')
@@ -116,6 +112,7 @@ long_cells = long_cells.assign(c2p=lambda x: x.n / (x.h*x.w))
 cell_dist = long_cells.groupby(cn_gg)['c2p'].describe()
 cell_dist = cell_dist.rename(columns={'25%':'lb','75%':'ub','50%':'mu','count':'n'})
 cell_dist = cell_dist.reset_index().drop(columns=['min','max','mean','std'])
+cell_dist.to_csv(os.path.join(dir_figures, 'gg_cell_dist_ds.csv'),index=False)
 
 posd = pn.position_dodge(0.5)
 gg_cell_dist_ds = (pn.ggplot(cell_dist,pn.aes(x='ds',y='mu',color='tt')) + 
