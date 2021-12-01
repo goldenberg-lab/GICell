@@ -447,6 +447,7 @@ for jj, cell in enumerate(cells):
 # Save
 path_conn = os.path.join(dir_output,'di_conn.pickle')
 hickle.dump(di_conn, path_conn, 'w')
+# di_conn = hickle.load(path_conn)
 
 # --- (ii) Get predicted/actual for all images --- #
 holder = []
@@ -538,6 +539,7 @@ tmp_df = tmp_df.groupby(cn_gg+['msr']).value.quantile([alpha/2, 1-alpha/2]).rese
 tmp_df = tmp_df.reset_index().pivot_table('value',cn_gg+['msr'],'level_'+str(len(cn_gg)+1))
 tmp_df = tmp_df.reset_index().rename(columns={alpha/2:'lb', 1-alpha/2:'ub'})
 df_both_rho = df_both_rho.merge(tmp_df)
+df_both_rho.to_csv(os.path.join(dir_figures, 'gg_rho_unet_post.csv'),index=False)
 
 # (ii) Plot R-squared
 posd = pn.position_dodge(0.5)
