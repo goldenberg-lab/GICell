@@ -59,6 +59,16 @@ check1 = df_cells.groupby(['ds','idt']).size().max() == 1
 check2 = df_cells.groupby(['ds','id','tissue']).size().max() == 1
 assert check1 & check2, "Error! idt is not unique by ds"
 
+# Count number of unique patients
+u_idt = pd.Series(df_cells['idt'].unique())
+u_patients = u_idt.str.replace('cleaned_','').str.split('_',1,True)[0]
+df_patients = pd.DataFrame({'idt':u_idt, 'patient':u_patients})
+df_patients = df_cells[['ds','idt','tissue']].merge(df_patients)
+# Find treatment naive patients
+u_patient_treated = df_patients.query('tissue!="Rectum"')['patient'].unique()
+u_patient_untreated = np.setdiff1d(u_patients, u_patient_treated)
+print('A total of %i unique patients (%i untreated, %i treated)' % (u_patients.shape[0], u_patient_untreated.shape[0], u_patient_treated.shape[0]))
+
 
 #######################################
 ## --- (2) ASSIGN TRAIN/VAL/TEST --- ##
