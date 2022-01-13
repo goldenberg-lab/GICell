@@ -1,12 +1,12 @@
 This repository contains the scripts needed to reproduce the eosinophil cell counting analysis. The code requires assumes that the folder structure is set up as follows:
 
-├── GICell
-│   ├── code
-│   ├── images
-│   ├── output
-│   └── points
-└── GIOrdinal
-    └── data
+* GICell
+    * code
+    * images
+    * output
+    * points
+* GIOrdinal
+    * data
 
 There are three main shell scripts which need to be run in a specific order (shown below). A description of each file in the script is summarized below. Please review the shell scripts themselves as they provide additional commentary on the python scripts. 
 
