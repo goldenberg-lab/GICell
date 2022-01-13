@@ -7,6 +7,7 @@ echo "--- (7) HP SEARCH ---"
 python -u 7_explore_hp.py
 # output:   ~/output/figures/gg_{metric}_val.png
 #           ~/output/figures/dat_{pr/ce}_ce.csv
+#           ~/output/hp_best.csv
 
 echo "--- (8) SELECT BEST MODELS ---"
 source 8_pipeline_best.sh
